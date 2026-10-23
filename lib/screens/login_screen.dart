@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'register_screen.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -11,7 +12,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _user = TextEditingController(text: 'admin');
-  final _pass = TextEditingController(text: 'admin123');
+  final _pass = TextEditingController();
   bool _loading = false;
   bool _obscurePassword = true;
   String? _error;
@@ -37,6 +38,17 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openRegister() async {
+    final username = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+    if (!mounted || username == null) return;
+    setState(() => _user.text = username);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Account created. Sign in to continue.')),
+    );
   }
 
   @override
@@ -132,6 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextField(
                               controller: _pass,
                               obscureText: _obscurePassword,
+                              autofillHints: const [],
                               onSubmitted: (_) => _loading ? null : _submit(),
                               decoration: InputDecoration(
                                 labelText: 'Password',
@@ -196,6 +209,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                           ),
                                         ],
                                       ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Center(
+                              child: TextButton(
+                                onPressed: _loading ? null : _openRegister,
+                                child: const Text('Create an account'),
                               ),
                             ),
                           ],

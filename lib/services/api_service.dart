@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,24 +26,41 @@ class ApiService {
   }
 
   Future<dynamic> get(String path) async {
-    final res = await http.get(Uri.parse('$baseUrl$path'), headers: await _headers());
+    final res = await http.get(
+      Uri.parse('$baseUrl$path'),
+      headers: await _headers(),
+    );
     return _handle(res);
   }
 
+  Future<List<Map<String, dynamic>>> getTopProductsThisMonth() async {
+    final response = await get('/analytics/top-products');
+    return (response as List).cast<Map<String, dynamic>>();
+  }
+
   Future<dynamic> post(String path, Map body, {bool auth = true}) async {
-    final res = await http.post(Uri.parse('$baseUrl$path'),
-        headers: await _headers(auth: auth), body: jsonEncode(body));
+    final res = await http.post(
+      Uri.parse('$baseUrl$path'),
+      headers: await _headers(auth: auth),
+      body: jsonEncode(body),
+    );
     return _handle(res);
   }
 
   Future<dynamic> put(String path, Map body) async {
-    final res = await http.put(Uri.parse('$baseUrl$path'),
-        headers: await _headers(), body: jsonEncode(body));
+    final res = await http.put(
+      Uri.parse('$baseUrl$path'),
+      headers: await _headers(),
+      body: jsonEncode(body),
+    );
     return _handle(res);
   }
 
   Future<dynamic> delete(String path) async {
-    final res = await http.delete(Uri.parse('$baseUrl$path'), headers: await _headers());
+    final res = await http.delete(
+      Uri.parse('$baseUrl$path'),
+      headers: await _headers(),
+    );
     return _handle(res);
   }
 

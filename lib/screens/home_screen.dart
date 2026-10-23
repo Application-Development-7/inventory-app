@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/theme_provider.dart';
 import 'products_screen.dart';
 import 'low_stock_screen.dart';
 import 'trends_screen.dart';
@@ -17,12 +18,43 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _data;
   int _index = 0;
   bool _loading = true;
+  DateTime? _selectedTransactionDate;
 
   @override
   void initState() {
     super.initState();
     _loadDashboard();
   }
+
+  Future<void> _refreshDashboard() => _loadDashboard();
+
+  Future<void> _selectTransactionDate() async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _selectedTransactionDate ?? now,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1),
+    );
+    if (selected != null && mounted) {
+      setState(() => _selectedTransactionDate = selected);
+    }
+  }
+
+  bool _isOnSelectedDate(Map<String, dynamic> transaction) {
+    final selected = _selectedTransactionDate;
+    if (selected == null) return true;
+    final createdAt = DateTime.tryParse(
+      transaction['created_at']?.toString() ?? '',
+    );
+    return createdAt != null &&
+        createdAt.year == selected.year &&
+        createdAt.month == selected.month &&
+        createdAt.day == selected.day;
+  }
+
+  String _formatDate(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
   Future<void> _loadDashboard() async {
     setState(() => _loading = true);
@@ -44,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+    final themeProvider = context.watch<ThemeProvider>();
     final pages = [
       _dashboardView(),
       const ProductsScreen(),
@@ -84,17 +117,28 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               tooltip: 'Refresh dashboard',
               style: IconButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF314657),
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
               ),
               icon: const Icon(Icons.refresh_rounded),
-              onPressed: _loadDashboard,
+              onPressed: _refreshDashboard,
             ),
+          IconButton(
+            tooltip: themeProvider.isDarkMode
+                ? 'Switch to light mode'
+                : 'Switch to dark mode',
+            icon: Icon(
+              themeProvider.isDarkMode
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+            ),
+            onPressed: themeProvider.toggleTheme,
+          ),
           const SizedBox(width: 6),
           IconButton(
             style: IconButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF314657),
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
             ),
             icon: const Icon(Icons.logout_rounded),
             tooltip: 'Logout ${auth.username ?? ""}',
@@ -143,8 +187,9 @@ class _HomeScreenState extends State<HomeScreen> {
         .cast<Map<String, dynamic>>();
     final recent = (_data!['recent_transactions'] as List)
         .cast<Map<String, dynamic>>();
+    final filteredRecent = recent.where(_isOnSelectedDate).toList();
     return RefreshIndicator(
-      onRefresh: _loadDashboard,
+      onRefresh: _refreshDashboard,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
@@ -257,17 +302,44 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           const SizedBox(height: 18),
           _sectionTitle('Latest activity', 'Recent transactions'),
-          const SizedBox(height: 12),
-          if (recent.isEmpty)
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _selectTransactionDate,
+                icon: const Icon(Icons.calendar_today_rounded, size: 18),
+                label: Text(
+                  _selectedTransactionDate == null
+                      ? 'Filter by date'
+                      : _formatDate(_selectedTransactionDate!),
+                ),
+              ),
+              if (_selectedTransactionDate != null) ...[
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () =>
+                      setState(() => _selectedTransactionDate = null),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  label: const Text('Clear'),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (filteredRecent.isEmpty)
             _emptyCard(
               Icons.receipt_long_rounded,
-              'No activity yet',
-              'Stock movements will show up here.',
+              _selectedTransactionDate == null
+                  ? 'No activity yet'
+                  : 'No transactions on this date',
+              _selectedTransactionDate == null
+                  ? 'Stock movements will show up here.'
+                  : 'Choose another date or clear the filter to see all recent transactions.',
             )
           else
             Card(
               child: Column(
-                children: recent.asMap().entries.map((entry) {
+                children: filteredRecent.asMap().entries.map((entry) {
                   final t = entry.value;
                   final isIn = t['type'] == 'IN';
                   return Column(
@@ -311,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
-                      if (entry.key != recent.length - 1)
+                      if (entry.key != filteredRecent.length - 1)
                         const Divider(height: 1, indent: 72),
                     ],
                   );
@@ -346,10 +418,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF172B3A),
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -358,9 +430,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
-                  color: Color(0xFF71818A),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -387,8 +459,8 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 3),
         Text(
           title,
-          style: const TextStyle(
-            color: Color(0xFF172B3A),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
             fontSize: 19,
             fontWeight: FontWeight.w800,
           ),
@@ -416,7 +488,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 3),
                   Text(
                     message,
-                    style: const TextStyle(color: Color(0xFF71818A)),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
