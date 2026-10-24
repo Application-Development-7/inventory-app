@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'api_service.dart';
 
 class AuthService extends ChangeNotifier {
@@ -7,7 +8,9 @@ class AuthService extends ChangeNotifier {
   bool isLoggedIn = false;
   String? username;
 
-  AuthService() { _load(); }
+  AuthService() {
+    _load();
+  }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -17,13 +20,24 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> login(String user, String pass) async {
-    final data = await _api.post('/auth/login', {'username': user, 'password': pass}, auth: false);
+    final data = await _api.post('/auth/login', {
+      'username': user,
+      'password': pass,
+    }, auth: false);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', data['token']);
     await prefs.setString('username', data['user']['username']);
     isLoggedIn = true;
     username = data['user']['username'];
     notifyListeners();
+  }
+
+  Future<void> register(String user, String pass) async {
+    await _api.post('/auth/register', {
+      'username': user,
+      'password': pass,
+      'role': 'staff',
+    }, auth: false);
   }
 
   Future<void> logout() async {
