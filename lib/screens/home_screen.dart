@@ -16,6 +16,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _data;
+  List<MapEntry<String, int>> _categoryStocks = [];
+  String? _categoryStockError;
+  String? _selectedTransactionCategory;
   int _index = 0;
   bool _loading = true;
   DateTime? _selectedTransactionDate;
@@ -56,10 +59,24 @@ class _HomeScreenState extends State<HomeScreen> {
   String _formatDate(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
+  String _formatTransactionDate(dynamic value) {
+    final rawDate = value?.toString() ?? '';
+    final date = DateTime.tryParse(rawDate);
+    if (date == null) return rawDate;
+
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour < 12 ? 'AM' : 'PM';
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')} · '
+        '$hour:$minute $period';
+  }
+
   Future<void> _loadDashboard() async {
     setState(() => _loading = true);
+    final api = context.read<ApiService>();
     try {
-      final data = await context.read<ApiService>().get('/dashboard');
+      final data = await api.get('/dashboard');
       if (mounted) {
         setState(() => _data = data);
       }
@@ -67,6 +84,40 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+    try {
+      final products = (await api.get('/products') as List)
+          .cast<Map<String, dynamic>>();
+      final stockByCategory = <String, int>{};
+      for (final product in products) {
+        final rawCategory = product['category_name']?.toString().trim();
+        final category = rawCategory == null || rawCategory.isEmpty
+            ? 'Uncategorized'
+            : rawCategory;
+        final rawQuantity = product['quantity'];
+        final quantity = rawQuantity is num
+            ? rawQuantity.toInt()
+            : int.tryParse(rawQuantity?.toString() ?? '') ?? 0;
+        stockByCategory.update(
+          category,
+          (total) => total + quantity,
+          ifAbsent: () => quantity,
+        );
+      }
+      final categoryStocks = stockByCategory.entries.toList()
+        ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+      if (mounted) {
+        setState(() {
+          _categoryStocks = categoryStocks;
+          _categoryStockError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _categoryStockError = e.toString();
+        });
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -101,14 +152,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(width: 11),
-            Text(
-              _index == 0
-                  ? 'Overview'
-                  : _index == 1
-                  ? 'Products'
-                  : _index == 2
-                  ? 'Low stock'
-                  : 'Trends & forecast',
+            Expanded(
+              child: Text(
+                _index == 0
+                    ? 'Overview'
+                    : _index == 1
+                    ? 'Products'
+                    : _index == 2
+                    ? 'Low stock'
+                    : 'Trends & forecast',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -187,210 +242,488 @@ class _HomeScreenState extends State<HomeScreen> {
         .cast<Map<String, dynamic>>();
     final recent = (_data!['recent_transactions'] as List)
         .cast<Map<String, dynamic>>();
-    final filteredRecent = recent.where(_isOnSelectedDate).toList();
+    final filteredRecent = recent.where((transaction) {
+      if (!_isOnSelectedDate(transaction)) return false;
+      if (_selectedTransactionCategory == null) return true;
+      return _transactionCategory(transaction) == _selectedTransactionCategory;
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _refreshDashboard,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
         children: [
-          Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF087E76), Color(0xFF075B63)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'YOUR STORE AT A GLANCE',
-                  style: TextStyle(
-                    color: Color(0xFFC4F2E8),
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
-                const SizedBox(height: 9),
-                Text(
-                  'Welcome${context.read<AuthService>().username == null ? '' : ', ${context.read<AuthService>().username}'}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 25,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Here’s what’s happening with your inventory today.',
-                  style: TextStyle(color: Color(0xFFD7EEEA), height: 1.4),
-                ),
-              ],
-            ),
-          ),
+          _welcomeCard(),
           const SizedBox(height: 18),
-          Row(
-            children: [
-              _statCard(
-                'Products',
-                '${_data!['stats']['total_products']}',
-                Icons.inventory_2_rounded,
-                const Color(0xFF087E76),
-              ),
-              const SizedBox(width: 10),
-              _statCard(
-                'Units in stock',
-                '${_data!['stats']['total_stock']}',
-                Icons.widgets_rounded,
-                const Color(0xFF3977C5),
-              ),
-              const SizedBox(width: 10),
-              _statCard(
-                'Need attention',
-                '${_data!['stats']['low_stock_count']}',
-                Icons.priority_high_rounded,
-                const Color(0xFFE28B43),
-              ),
-            ],
+          _statsRow(),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 800;
+
+              if (isWide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _buildStockByCategorySection()),
+                    const SizedBox(width: 12),
+                    Expanded(child: _buildLowStockSection(low)),
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildStockByCategorySection(),
+                  const SizedBox(height: 12),
+                  _buildLowStockSection(low),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 26),
-          _sectionTitle('Needs attention', 'Low-stock products'),
-          const SizedBox(height: 12),
-          if (low.isEmpty)
-            _emptyCard(
-              Icons.check_circle_outline_rounded,
-              'Looking good!',
-              'All products are sufficiently stocked.',
-            )
-          else
-            ...low.map(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 9),
-                child: Card(
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 5,
-                    ),
-                    leading: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1E3),
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      child: const Icon(
-                        Icons.warning_amber_rounded,
-                        color: Color(0xFFE28B43),
-                      ),
-                    ),
-                    title: Text(
-                      p['name'],
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '${p['quantity']} left · minimum ${p['min_stock']}',
-                    ),
-                  ),
-                ),
-              ),
+          _buildRecentTransactionsSection(filteredRecent),
+        ],
+      ),
+    );
+  }
+
+  Widget _welcomeCard() {
+    final username = context.read<AuthService>().username;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF087E76), Color(0xFF075B63)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'YOUR STORE AT A GLANCE',
+            style: TextStyle(
+              color: Color(0xFFC4F2E8),
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
             ),
-          const SizedBox(height: 18),
-          _sectionTitle('Latest activity', 'Recent transactions'),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: _selectTransactionDate,
-                icon: const Icon(Icons.calendar_today_rounded, size: 18),
-                label: Text(
-                  _selectedTransactionDate == null
-                      ? 'Filter by date'
-                      : _formatDate(_selectedTransactionDate!),
-                ),
-              ),
-              if (_selectedTransactionDate != null) ...[
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _selectedTransactionDate = null),
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  label: const Text('Clear'),
-                ),
-              ],
-            ],
           ),
-          const SizedBox(height: 10),
-          if (filteredRecent.isEmpty)
-            _emptyCard(
-              Icons.receipt_long_rounded,
-              _selectedTransactionDate == null
-                  ? 'No activity yet'
-                  : 'No transactions on this date',
-              _selectedTransactionDate == null
-                  ? 'Stock movements will show up here.'
-                  : 'Choose another date or clear the filter to see all recent transactions.',
-            )
-          else
-            Card(
-              child: Column(
-                children: filteredRecent.asMap().entries.map((entry) {
-                  final t = entry.value;
-                  final isIn = t['type'] == 'IN';
+          const SizedBox(height: 9),
+          Text(
+            'Welcome${username == null ? '' : ', $username'}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 25,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Here’s what’s happening with your inventory today.',
+            style: TextStyle(color: Color(0xFFD7EEEA), height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsRow() {
+    final stats = _data!['stats'];
+    return Row(
+      children: [
+        _statCard(
+          'Products',
+          '${stats['total_products']}',
+          Icons.inventory_2_rounded,
+          const Color(0xFF087E76),
+        ),
+        const SizedBox(width: 8),
+        _statCard(
+          'Total stock',
+          '${stats['total_stock']}',
+          Icons.widgets_rounded,
+          const Color(0xFF3977C5),
+        ),
+        const SizedBox(width: 8),
+        _statCard(
+          'Low stock',
+          '${stats['low_stock_count']}',
+          Icons.priority_high_rounded,
+          const Color(0xFFE28B43),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStockByCategorySection() {
+    final totalStock = _categoryStocks.fold<int>(
+      0,
+      (total, category) => total + category.value,
+    );
+
+    return _dashboardSummaryCard(
+      title: 'Stock by Category',
+      child: SizedBox(
+        height: 250,
+        child: _categoryStockError != null
+            ? Text(
+                'Could not load category stock.',
+                style: const TextStyle(color: Color(0xFFB53F48)),
+              )
+            : _categoryStocks.isEmpty
+            ? const Text(
+                'No category stock to show.',
+                style: TextStyle(color: Color(0xFF71818A)),
+              )
+            : ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: _categoryStocks.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 14),
+                itemBuilder: (_, index) {
+                  final category = _categoryStocks[index];
+                  final proportion = totalStock <= 0
+                      ? 0.0
+                      : (category.value / totalStock).clamp(0.0, 1.0);
                   return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 4,
-                        ),
-                        leading: Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: isIn
-                                ? const Color(0xFFE5F5EE)
-                                : const Color(0xFFFFECEA),
-                            borderRadius: BorderRadius.circular(13),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              category.key,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF172B3A),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
-                          child: Icon(
-                            isIn
-                                ? Icons.south_west_rounded
-                                : Icons.north_east_rounded,
-                            color: isIn
-                                ? const Color(0xFF25865B)
-                                : const Color(0xFFD65C54),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${category.value}',
+                            style: const TextStyle(
+                              color: Color(0xFF71818A),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
                           ),
-                        ),
-                        title: Text(
-                          '${t['product_name']}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(t['created_at']?.toString() ?? ''),
-                        trailing: Text(
-                          '${isIn ? '+' : '-'}${t['quantity']}',
-                          style: TextStyle(
-                            color: isIn
-                                ? const Color(0xFF25865B)
-                                : const Color(0xFFD65C54),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: proportion,
+                          minHeight: 7,
+                          backgroundColor: const Color(0xFFE6EFEC),
+                          color: const Color(0xFF378D78),
                         ),
                       ),
-                      if (entry.key != filteredRecent.length - 1)
-                        const Divider(height: 1, indent: 72),
                     ],
                   );
-                }).toList(),
+                },
+              ),
+      ),
+    );
+  }
+
+  Widget _buildLowStockSection(List<Map<String, dynamic>> low) {
+    return _dashboardSummaryCard(
+      title: 'Needs Attention',
+      subtitle: 'Low-stock products',
+      child: SizedBox(
+        height: 250,
+        child: low.isEmpty
+            ? const Center(
+                child: Text(
+                  'All stocked up.',
+                  style: TextStyle(color: Color(0xFF71818A)),
+                ),
+              )
+            : ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: low.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (_, index) {
+                  final product = low[index];
+                  return Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF1E3),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Color(0xFFE28B43),
+                          size: 19,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product['name']?.toString() ?? 'Inventory item',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF172B3A),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${product['quantity']} left · min ${product['min_stock']}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF71818A),
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  Widget _dashboardSummaryCard({
+    required String title,
+    String? subtitle,
+    required Widget child,
+  }) {
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE2E8EA)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF172B3A),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
               ),
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF71818A), fontSize: 11),
+              ),
+            ],
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentTransactionsSection(
+    List<Map<String, dynamic>> filteredRecent,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildRecentTransactionsHeader()),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 165,
+              child: DropdownButtonFormField<String?>(
+                initialValue: _selectedTransactionCategory,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Category',
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('All Categories'),
+                  ),
+                  ..._categoryStocks.map(
+                    (category) => DropdownMenuItem<String?>(
+                      value: category.key,
+                      child: Text(
+                        category.key,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (category) =>
+                    setState(() => _selectedTransactionCategory = category),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _buildTransactionDateFilter(),
+        const SizedBox(height: 10),
+        ...filteredRecent.isEmpty
+            ? [_buildNoTransactionsCard()]
+            : filteredRecent.map(_buildTransactionCard),
+      ],
+    );
+  }
+
+  Widget _buildRecentTransactionsHeader() {
+    return _sectionTitle('Latest activity', 'Recent transactions');
+  }
+
+  String _transactionCategory(Map<String, dynamic> transaction) {
+    final category = transaction['category_name']?.toString().trim();
+    return category == null || category.isEmpty ? 'Uncategorized' : category;
+  }
+
+  Widget _buildTransactionDateFilter() {
+    return Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: _selectTransactionDate,
+          icon: const Icon(Icons.calendar_today_rounded, size: 18),
+          label: Text(
+            _selectedTransactionDate == null
+                ? 'Filter by date'
+                : _formatDate(_selectedTransactionDate!),
+          ),
+        ),
+        if (_selectedTransactionDate != null) ...[
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: () => setState(() => _selectedTransactionDate = null),
+            icon: const Icon(Icons.close_rounded, size: 18),
+            label: const Text('Clear'),
+          ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildNoTransactionsCard() {
+    return _emptyCard(
+      Icons.receipt_long_rounded,
+      _selectedTransactionDate == null
+          ? 'No activity yet'
+          : 'No transactions on this date',
+      _selectedTransactionDate == null ? 'Stock movements will show up here.' : 'Choose another date or clear the filter to see all recent transactions.',
+    );
+  }
+
+  Widget _buildTransactionCard(
+    Map<String, dynamic> transaction, {
+    bool compact = false,
+  }) {
+    final isIn = transaction['type'] == 'IN';
+    final color = isIn ? const Color(0xFF25865B) : const Color(0xFFD65C54);
+    final quantity = transaction['quantity']?.toString() ?? '0';
+
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE2E8EA)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 14,
+          vertical: compact ? 8 : 11,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: compact ? 38 : 44,
+              height: compact ? 38 : 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isIn ? Icons.south_west_rounded : Icons.north_east_rounded,
+                color: color,
+                size: compact ? 18 : 21,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    transaction['product_name']?.toString() ?? 'Inventory item',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: const Color(0xFF172B3A),
+                      fontWeight: FontWeight.w800,
+                      fontSize: compact ? 13 : 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${isIn ? 'Stock In' : 'Stock Out'} · '
+                    '${isIn ? '+' : '-'}$quantity units',
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 11 : 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatTransactionDate(transaction['created_at']),
+                    style: TextStyle(
+                      color: const Color(0xFF84939A),
+                      fontSize: compact ? 10 : 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF9AABB0),
+              size: 22,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -398,8 +731,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _statCard(String label, String value, IconData icon, Color color) {
     return Expanded(
       child: Card(
+        color: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFE2E8EA)),
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 15),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

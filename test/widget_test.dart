@@ -115,8 +115,15 @@ void main() {
       find.text('Need at least 3 months of stock-out history'),
       findsOneWidget,
     );
-    expect(find.text('Top Products This Month'), findsOneWidget);
+    expect(
+      find.text('Top Products in ${_monthName(DateTime.now().month)}'),
+      findsOneWidget,
+    );
     expect(find.byType(BarChart), findsOneWidget);
+    expect(
+      api.lastTopProductsPath,
+      '/analytics/top-products?month=${DateTime.now().month}',
+    );
     expect(
       find.text(
         'Recommendation: Stock up on Coffee for next month based on current sales velocity.',
@@ -135,11 +142,42 @@ void main() {
       find.text('Need at least 3 months of stock-out history'),
       findsOneWidget,
     );
+
+    final selectedMonth = DateTime.now().month % 12 + 1;
+    await tester.tap(find.byType(DropdownButtonFormField<int>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_monthName(selectedMonth)).last);
+    await tester.pumpAndSettle();
+
+    expect(
+      api.lastTopProductsPath,
+      '/analytics/top-products?month=$selectedMonth',
+    );
+    expect(
+      find.text('Top Products in ${_monthName(selectedMonth)}'),
+      findsOneWidget,
+    );
   });
 }
 
+String _monthName(int month) => const [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+][month - 1];
+
 class _FakeForecastApiService extends ApiService {
   String? lastForecastPath;
+  String? lastTopProductsPath;
 
   @override
   Future<dynamic> get(String path) async {
@@ -149,7 +187,8 @@ class _FakeForecastApiService extends ApiService {
         {'id': 2, 'name': 'Tea'},
       ];
     }
-    if (path == '/analytics/top-products') {
+    if (path.startsWith('/analytics/top-products')) {
+      lastTopProductsPath = path;
       return [
         {'product_id': 1, 'product_name': 'Coffee', 'total_sold': 18},
         {'product_id': 2, 'product_name': 'Tea', 'total_sold': 11},
