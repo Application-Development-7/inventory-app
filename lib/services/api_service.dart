@@ -33,8 +33,14 @@ class ApiService {
     return _handle(res);
   }
 
-  Future<List<Map<String, dynamic>>> getTopProductsThisMonth() async {
-    final response = await get('/analytics/top-products');
+  Future<List<Map<String, dynamic>>> getTopProductsThisMonth({
+    int? month,
+  }) async {
+    final selectedMonth = month ?? DateTime.now().month;
+    if (selectedMonth < 1 || selectedMonth > 12) {
+      throw ArgumentError.value(month, 'month', 'Must be between 1 and 12');
+    }
+    final response = await get('/analytics/top-products?month=$selectedMonth');
     return (response as List).cast<Map<String, dynamic>>();
   }
 

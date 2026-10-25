@@ -15,6 +15,21 @@ class TrendsScreen extends StatefulWidget {
 }
 
 class _TrendsScreenState extends State<TrendsScreen> {
+  static const _monthNames = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
   List<Map<String, dynamic>> _products = [];
   String? _selectedProductId;
   Map<String, dynamic>? _trend;
@@ -26,6 +41,8 @@ class _TrendsScreenState extends State<TrendsScreen> {
   String? _forecastError;
   String? _topProductsError;
   int _forecastRequestId = 0;
+  int _selectedTopProductsMonth = DateTime.now().month;
+  int _topProductsRequestId = 0;
 
   @override
   void initState() {
@@ -39,28 +56,36 @@ class _TrendsScreenState extends State<TrendsScreen> {
   }
 
   Future<void> _loadTopProducts() async {
+    final requestId = ++_topProductsRequestId;
+    final month = _selectedTopProductsMonth;
     setState(() {
       _topProductsLoading = true;
       _topProductsError = null;
     });
     try {
-      final products = await context
-          .read<ApiService>()
-          .getTopProductsThisMonth();
-      if (mounted) {
+      final products = await context.read<ApiService>().getTopProductsThisMonth(
+        month: month,
+      );
+      if (mounted && requestId == _topProductsRequestId) {
         setState(() {
           _topProducts = products;
           _topProductsLoading = false;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && requestId == _topProductsRequestId) {
         setState(() {
           _topProductsError = error.toString();
           _topProductsLoading = false;
         });
       }
     }
+  }
+
+  void _onTopProductsMonthSelected(int? month) {
+    if (month == null || month == _selectedTopProductsMonth) return;
+    setState(() => _selectedTopProductsMonth = month);
+    _loadTopProducts();
   }
 
   Future<void> _loadProducts() async {
@@ -294,13 +319,41 @@ class _TrendsScreenState extends State<TrendsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Top Products This Month',
-              style: TextStyle(
-                color: colorScheme.onSurface,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Top Products in ${_monthNames[_selectedTopProductsMonth - 1]}',
+                    style: TextStyle(
+                      color: colorScheme.onSurface,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 100,
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _selectedTopProductsMonth,
+                    decoration: const InputDecoration(
+                      labelText: 'Month',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                    ),
+                    items: List.generate(
+                      _monthNames.length,
+                      (index) => DropdownMenuItem<int>(
+                        value: index + 1,
+                        child: Text(_monthNames[index]),
+                      ),
+                    ),
+                    onChanged: _onTopProductsMonthSelected,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
             if (_topProductsLoading)
@@ -329,7 +382,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: Text(
-                    'No products have sales recorded this month yet.',
+                    'No products have sales recorded in ${_monthNames[_selectedTopProductsMonth - 1]} yet.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: colorScheme.onSurfaceVariant),
                   ),
