@@ -60,6 +60,68 @@ void main() {
     expect(find.text('Stock by Category'), findsOneWidget);
     expect(find.text('Beverages'), findsOneWidget);
   });
+
+  testWidgets('shows and hides the API inventory value', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpDashboard(tester);
+
+    expect(find.text('₱1,240.50'), findsOneWidget);
+
+    await tester.ensureVisible(find.byTooltip('Hide inventory value'));
+    await tester.tap(find.byTooltip('Hide inventory value'));
+    await tester.pumpAndSettle();
+    expect(find.text('******'), findsOneWidget);
+    expect(find.byTooltip('Show inventory value'), findsOneWidget);
+
+    await tester.ensureVisible(find.byTooltip('Show inventory value'));
+    await tester.tap(find.byTooltip('Show inventory value'));
+    await tester.pumpAndSettle();
+    expect(find.text('₱1,240.50'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('confirms before logging out', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({'token': 'test-token'});
+    final auth = AuthService()..isLoggedIn = true;
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: _DashboardApiService()),
+          ChangeNotifierProvider<AuthService>.value(value: auth),
+          ChangeNotifierProvider<ThemeProvider>.value(value: ThemeProvider()),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Log out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out?'), findsOneWidget);
+    expect(auth.isLoggedIn, isTrue);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out?'), findsNothing);
+    expect(auth.isLoggedIn, isTrue);
+
+    await tester.tap(find.byTooltip('Log out'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log out').last);
+    await tester.pumpAndSettle();
+    expect(auth.isLoggedIn, isFalse);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _pumpDashboard(WidgetTester tester) async {
@@ -93,6 +155,7 @@ class _DashboardApiService extends ApiService {
           'total_products': 12,
           'total_stock': 86,
           'low_stock_count': 1,
+          'inventory_value': '1240.50',
         },
         'low_stock_products': [
           {'name': 'Tea', 'quantity': 2, 'min_stock': 5},

@@ -1,7 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import 'product_form_screen.dart';
+import 'stock_transaction_screen.dart';
 
 class LowStockScreen extends StatefulWidget {
   const LowStockScreen({super.key});
@@ -15,6 +19,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   String? _error;
+  String _search = '';
   String _selectedCategory = _allCategories;
   bool _isGridView = false;
 
@@ -56,13 +61,16 @@ class _LowStockScreenState extends State<LowStockScreen> {
     return categories;
   }
 
-  List<Map<String, dynamic>> get _filteredItems => _items
-      .where(
-        (item) =>
-            _selectedCategory == _allCategories ||
-            _categoryName(item) == _selectedCategory,
-      )
-      .toList();
+  List<Map<String, dynamic>> get _filteredItems => _items.where((item) {
+    final name = item['name']?.toString().toLowerCase() ?? '';
+    final sku = item['sku']?.toString().toLowerCase() ?? '';
+    final query = _search.toLowerCase();
+    final matchesSearch = name.contains(query) || sku.contains(query);
+    final matchesCategory =
+        _selectedCategory == _allCategories ||
+        _categoryName(item) == _selectedCategory;
+    return matchesSearch && matchesCategory;
+  }).toList();
 
   String _categoryName(Map<String, dynamic> item) {
     final category = item['category_name']?.toString().trim();
@@ -76,183 +84,193 @@ class _LowStockScreenState extends State<LowStockScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final filteredItems = _filteredItems;
     final categories = [_allCategories, ..._categories];
 
-    if (_loading && _items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-            sliver: SliverToBoxAdapter(
-              child: _buildSummaryCard(filteredItems.length),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 12, 12),
-            sliver: SliverToBoxAdapter(
-              child: Row(
+    return Scaffold(
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final margin = constraints.maxWidth >= 800 ? 32.0 : 20.0;
+            return Padding(
+              padding: EdgeInsets.all(margin),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: categories.contains(_selectedCategory)
-                          ? _selectedCategory
-                          : _allCategories,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
-                        ),
-                      ),
-                      items: categories
-                          .map(
-                            (category) => DropdownMenuItem(
-                              value: category,
-                              child: Text(
-                                category,
-                                overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Low Stock',
+                              style: TextStyle(
+                                color: colorScheme.onSurface,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                          )
-                          .toList(),
-                      onChanged: (category) {
-                        if (category != null) {
-                          setState(() => _selectedCategory = category);
-                        }
-                      },
-                    ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Review items that need restocking',
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${filteredItems.length} need attention',
+                          style: TextStyle(
+                            color: colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: _isGridView ? 'Show as list' : 'Show as grid',
-                    onPressed: () => setState(() => _isGridView = !_isGridView),
-                    icon: Icon(
-                      _isGridView
-                          ? Icons.view_list_rounded
-                          : Icons.grid_view_rounded,
-                    ),
+                  const SizedBox(height: 20),
+                  _buildActionBar(categories),
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: _loading && _items.isEmpty
+                        ? const Center(child: CircularProgressIndicator())
+                        : _error != null && _items.isEmpty
+                        ? _buildErrorCard()
+                        : _items.isEmpty
+                        ? _buildEmptyCard()
+                        : filteredItems.isEmpty
+                        ? _buildNoMatchesCard()
+                        : _isGridView
+                        ? RefreshIndicator(
+                            onRefresh: _load,
+                            child: GridView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 20),
+                              gridDelegate:
+                                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 350,
+                                    crossAxisSpacing: 11,
+                                    mainAxisSpacing: 11,
+                                    mainAxisExtent: 220,
+                                  ),
+                              itemCount: filteredItems.length,
+                              itemBuilder: (context, index) =>
+                                  _buildLowStockCard(
+                                    filteredItems[index],
+                                    isGrid: true,
+                                  ),
+                            ),
+                          )
+                        : _buildTable(filteredItems),
                   ),
                 ],
               ),
-            ),
-          ),
-          if (_error != null && _items.isEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              sliver: SliverToBoxAdapter(child: _buildErrorCard()),
-            )
-          else if (_items.isEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              sliver: SliverToBoxAdapter(child: _buildEmptyCard()),
-            )
-          else if (filteredItems.isEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              sliver: SliverToBoxAdapter(child: _buildNoMatchesCard()),
-            )
-          else if (_isGridView)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 25),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 350,
-                  crossAxisSpacing: 11,
-                  mainAxisSpacing: 11,
-                  mainAxisExtent: 220,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) =>
-                      _buildLowStockCard(filteredItems[index], isGrid: true),
-                  childCount: filteredItems.length,
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 25),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => Padding(
-                    padding: const EdgeInsets.only(bottom: 11),
-                    child: _buildLowStockCard(filteredItems[index]),
-                  ),
-                  childCount: filteredItems.length,
-                ),
-              ),
-            ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildSummaryCard(int filteredCount) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF1E3),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: const Icon(
-              Icons.notifications_active_rounded,
-              color: Color(0xFFE28B43),
-            ),
+  Widget _buildActionBar(List<String> categories) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final search = TextField(
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded),
+            hintText: 'Search low stock products...',
+            isDense: true,
           ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          onChanged: (value) => setState(() => _search = value),
+        );
+        final categoryDropdown = DropdownButtonFormField<String>(
+          initialValue: categories.contains(_selectedCategory)
+              ? _selectedCategory
+              : _allCategories,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Category',
+            isDense: true,
+          ),
+          items: categories
+              .map(
+                (category) => DropdownMenuItem(
+                  value: category,
+                  child: Text(category, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: (category) {
+            if (category != null) {
+              setState(() => _selectedCategory = category);
+            }
+          },
+        );
+        final toggle = IconButton(
+          tooltip: _isGridView ? 'Show as table' : 'Show as grid',
+          onPressed: () => setState(() => _isGridView = !_isGridView),
+          icon: Icon(
+            _isGridView ? Icons.table_rows_rounded : Icons.grid_view_rounded,
+          ),
+        );
+
+        if (constraints.maxWidth >= 760) {
+          return Row(
+            children: [
+              Expanded(flex: 3, child: search),
+              const SizedBox(width: 10),
+              SizedBox(width: 210, child: categoryDropdown),
+              const SizedBox(width: 8),
+              toggle,
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            search,
+            const SizedBox(height: 10),
+            Row(
               children: [
-                Text(
-                  '$filteredCount ${filteredCount == 1 ? 'product needs' : 'products need'} attention',
-                  style: const TextStyle(
-                    color: Color(0xFF75451F),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                const Text(
-                  'Restock before you run out.',
-                  style: TextStyle(color: Color(0xFF9A6A42)),
-                ),
+                Expanded(child: categoryDropdown),
+                const SizedBox(width: 8),
+                toggle,
               ],
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
   Widget _buildErrorCard() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(22),
+        padding: const EdgeInsets.all(28),
         child: Column(
           children: [
-            const Icon(
-              Icons.cloud_off_rounded,
-              color: Color(0xFF9AABB0),
-              size: 38,
-            ),
+            const Icon(Icons.cloud_off_rounded, size: 38),
             const SizedBox(height: 10),
-            const Text('Could not load low-stock items'),
+            Text(
+              'Could not load low-stock items',
+              style: TextStyle(color: colorScheme.onSurface),
+            ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _load,
@@ -266,75 +284,372 @@ class _LowStockScreenState extends State<LowStockScreen> {
   }
 
   Widget _buildEmptyCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 34),
-        child: Column(
-          children: [
-            Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE7F4F0),
-                borderRadius: BorderRadius.circular(19),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Icon(
+                  Icons.inventory_2_rounded,
+                  color: colorScheme.onPrimaryContainer,
+                  size: 34,
+                ),
               ),
-              child: const Icon(
-                Icons.check_rounded,
-                color: Color(0xFF087E76),
-                size: 30,
+              const SizedBox(height: 16),
+              Text(
+                'All stocked up!',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'All stocked up',
-              style: TextStyle(
-                color: Color(0xFF172B3A),
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+              const SizedBox(height: 6),
+              Text(
+                'All products are above their minimum stock levels.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
-            ),
-            const SizedBox(height: 5),
-            const Text(
-              'All products are above their minimum stock levels.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF71818A)),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildNoMatchesCard() {
-    return Card(
-      color: Colors.white,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE2E8EA)),
-      ),
-      child: const Padding(
-        padding: EdgeInsets.all(24),
-        child: Text(
-          'No low-stock products in this category.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xFF71818A)),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No low-stock products match your search or category.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildTable(List<Map<String, dynamic>> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tableWidth = math.max(760.0, constraints.maxWidth).toDouble();
+        return RefreshIndicator(
+          onRefresh: _load,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: tableWidth,
+              child: Column(
+                children: [
+                  _tableHeader(),
+                  Expanded(
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) => _tableRow(items[index]),
+                    ),
+                  ),
+                  _tableFooter(items.length),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tableHeader() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant),
+          bottom: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: const Row(
+        children: [
+          Expanded(flex: 4, child: _TableHeaderLabel('PRODUCT')),
+          Expanded(flex: 2, child: _TableHeaderLabel('CATEGORY')),
+          Expanded(flex: 2, child: _TableHeaderLabel('CURRENT STOCK')),
+          Expanded(flex: 2, child: _TableHeaderLabel('MINIMUM')),
+          Expanded(flex: 2, child: _TableHeaderLabel('STATUS')),
+          SizedBox(width: 44),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableRow(Map<String, dynamic> item) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final quantity = _intValue(item['quantity']);
+    final isOutOfStock = quantity <= 0;
+    final statusColor = isOutOfStock ? colorScheme.error : colorScheme.tertiary;
+    final sku = item['sku']?.toString().trim();
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 76),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(
+                    Icons.warning_amber_rounded,
+                    color: colorScheme.onTertiaryContainer,
+                    size: 21,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item['name']?.toString() ?? 'Unnamed product',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        sku == null || sku.isEmpty ? 'SKU not set' : sku,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              _categoryName(item),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '$quantity',
+              style: TextStyle(color: statusColor, fontWeight: FontWeight.w800),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '${_intValue(item['min_stock'])}',
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isOutOfStock ? 'Out of stock' : 'Low stock',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 44, child: _itemActions(item)),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableFooter(int displayedCount) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant),
+          bottom: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Showing $displayedCount of ${_items.length} low-stock products',
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const IconButton(
+            tooltip: 'Previous page',
+            onPressed: null,
+            icon: Icon(Icons.chevron_left_rounded),
+          ),
+          Text(
+            '1',
+            style: TextStyle(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const IconButton(
+            tooltip: 'Next page',
+            onPressed: null,
+            icon: Icon(Icons.chevron_right_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _itemActions(Map<String, dynamic> item) {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      tooltip: 'Product actions',
+      onSelected: (value) async {
+        if (value == 'edit') {
+          await showDialog<void>(
+            context: context,
+            builder: (_) => ProductFormScreen(product: item),
+          );
+          if (mounted) _load();
+        } else if (value == 'in' || value == 'out') {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StockTransactionScreen(
+                product: item,
+                type: value == 'in' ? 'IN' : 'OUT',
+              ),
+            ),
+          );
+          if (mounted) _load();
+        } else if (value == 'delete') {
+          _delete(_intValue(item['id']));
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'edit', child: Text('Edit product')),
+        const PopupMenuItem(value: 'in', child: Text('Stock in')),
+        const PopupMenuItem(value: 'out', child: Text('Stock out')),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text(
+            'Delete',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _delete(int id) async {
+    final api = context.read<ApiService>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete product?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await api.delete('/products/$id');
+      if (mounted) _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
   }
 
   Widget _buildLowStockCard(Map<String, dynamic> item, {bool isGrid = false}) {
     final quantity = _intValue(item['quantity']);
     final minimum = _intValue(item['min_stock']);
     final progress = minimum <= 0 ? 0.0 : (quantity / minimum).clamp(0.0, 1.0);
+    final colorScheme = Theme.of(context).colorScheme;
+    final isOutOfStock = quantity <= 0;
+    final statusColor = isOutOfStock ? colorScheme.error : colorScheme.tertiary;
 
     return Card(
-      color: Colors.white,
+      color: colorScheme.surface,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: const Color(0xFFE57373).withValues(alpha: 0.4)),
+        side: BorderSide(color: statusColor.withValues(alpha: 0.35)),
       ),
       child: Padding(
         padding: EdgeInsets.all(isGrid ? 12 : 16),
@@ -350,12 +665,12 @@ class _LowStockScreenState extends State<LowStockScreen> {
                   width: isGrid ? 38 : 45,
                   height: isGrid ? 38 : 45,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFEBEE),
+                    color: colorScheme.tertiaryContainer,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
                     Icons.warning_amber_rounded,
-                    color: const Color(0xFFD94F4F),
+                    color: colorScheme.onTertiaryContainer,
                     size: isGrid ? 22 : 25,
                   ),
                 ),
@@ -371,23 +686,27 @@ class _LowStockScreenState extends State<LowStockScreen> {
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: isGrid ? 13 : 16,
-                          color: const Color(0xFF172B3A),
+                          color: colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        _categoryName(item),
+                        item['sku']?.toString() ?? 'SKU not set',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF71818A),
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (!isGrid) ...[const SizedBox(width: 8), _lowStockBadge()],
+                if (!isGrid) ...[
+                  _statusBadge(isOutOfStock, statusColor),
+                  const SizedBox(width: 6),
+                ],
+                _itemActions(item),
               ],
             ),
             SizedBox(height: isGrid ? 8 : 18),
@@ -398,7 +717,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
                   child: _stockValue(
                     'CURRENT STOCK',
                     '$quantity',
-                    const Color(0xFFD94F4F),
+                    statusColor,
                     isGrid,
                   ),
                 ),
@@ -406,11 +725,11 @@ class _LowStockScreenState extends State<LowStockScreen> {
                   child: _stockValue(
                     'MINIMUM STOCK',
                     '$minimum',
-                    const Color(0xFF71818A),
+                    colorScheme.onSurfaceVariant,
                     isGrid,
                   ),
                 ),
-                if (isGrid) _lowStockBadge(),
+                if (isGrid) _statusBadge(isOutOfStock, statusColor),
               ],
             ),
             SizedBox(height: isGrid ? 7 : 11),
@@ -419,8 +738,8 @@ class _LowStockScreenState extends State<LowStockScreen> {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: isGrid ? 5 : 7,
-                backgroundColor: const Color(0xFFFBE4E5),
-                color: const Color(0xFFD94F4F),
+                backgroundColor: colorScheme.errorContainer,
+                color: statusColor,
               ),
             ),
           ],
@@ -429,14 +748,33 @@ class _LowStockScreenState extends State<LowStockScreen> {
     );
   }
 
+  Widget _statusBadge(bool isOutOfStock, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        isOutOfStock ? 'Out of stock' : 'Low stock',
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Widget _stockValue(String label, String value, Color color, bool isGrid) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
           style: TextStyle(
-            color: const Color(0xFF9AABB0),
+            color: colorScheme.onSurfaceVariant,
             fontSize: isGrid ? 8 : 9,
             letterSpacing: 0.5,
             fontWeight: FontWeight.w800,
@@ -454,19 +792,25 @@ class _LowStockScreenState extends State<LowStockScreen> {
       ],
     );
   }
+}
 
-  Widget _lowStockBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFEBEE),
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: const Text(
-        'LOW',
+class _TableHeaderLabel extends StatelessWidget {
+  final String label;
+
+  const _TableHeaderLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: Color(0xFFB53F48),
-          fontSize: 9,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 10,
+          letterSpacing: 0.8,
           fontWeight: FontWeight.w800,
         ),
       ),

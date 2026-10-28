@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -115,7 +117,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
   List<Map<String, dynamic>> get _visibleProducts {
     final products = _products.where((product) {
       final name = product['name']?.toString().toLowerCase() ?? '';
-      final matchesSearch = name.contains(_search.toLowerCase());
+      final sku = product['sku']?.toString().toLowerCase() ?? '';
+      final query = _search.toLowerCase();
+      final matchesSearch = name.contains(query) || sku.contains(query);
       final matchesCategory =
           _selectedCategory == _allCategories ||
           _categoryName(product) == _selectedCategory;
@@ -150,200 +154,483 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final filtered = _visibleProducts;
     final categories = [_allCategories, ..._categories];
 
     return Scaffold(
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 13),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search_rounded),
-                      hintText: 'Search your products',
-                      suffixIcon: Icon(Icons.tune_rounded),
-                    ),
-                    onChanged: (value) => setState(() => _search = value),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 145,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: categories.contains(_selectedCategory)
-                        ? _selectedCategory
-                        : _allCategories,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 14,
-                      ),
-                    ),
-                    items: categories
-                        .map(
-                          (category) => DropdownMenuItem(
-                            value: category,
-                            child: Text(
-                              category,
-                              overflow: TextOverflow.ellipsis,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final margin = constraints.maxWidth >= 800 ? 32.0 : 20.0;
+            return Padding(
+              padding: EdgeInsets.all(margin),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Products',
+                              style: TextStyle(
+                                color: colorScheme.onSurface,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (category) {
-                      if (category != null) {
-                        setState(() => _selectedCategory = category);
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 12, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _selectedSort,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Sort by',
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 14,
-                      ),
-                    ),
-                    items: _sortOptions
-                        .map(
-                          (option) => DropdownMenuItem(
-                            value: option,
-                            child: Text(
-                              option,
-                              overflow: TextOverflow.ellipsis,
+                            const SizedBox(height: 4),
+                            Text(
+                              'Manage your inventory catalog',
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (sort) {
-                      if (sort != null) setState(() => _selectedSort = sort);
-                    },
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: _isGridView ? 'Show as list' : 'Show as grid',
-                  onPressed: () => setState(() => _isGridView = !_isGridView),
-                  icon: Icon(
-                    _isGridView
-                        ? Icons.view_list_rounded
-                        : Icons.grid_view_rounded,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Row(
-              children: [
-                const Text(
-                  'YOUR CATALOG',
-                  style: TextStyle(
-                    color: Color(0xFF087E76),
-                    letterSpacing: 1,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${filtered.length} ${filtered.length == 1 ? 'item' : 'items'}',
-                  style: const TextStyle(
-                    color: Color(0xFF71818A),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: filtered.isEmpty
-                        ? ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.all(28),
-                            children: [
-                              const SizedBox(height: 60),
-                              Icon(
-                                _search.isEmpty &&
-                                        _selectedCategory == _allCategories
-                                    ? Icons.inventory_2_outlined
-                                    : Icons.search_off_rounded,
-                                size: 52,
-                                color: const Color(0xFF9AABB0),
-                              ),
-                              const SizedBox(height: 15),
-                              Text(
-                                _search.isEmpty &&
-                                        _selectedCategory == _allCategories
-                                    ? 'Your catalog is ready'
-                                    : 'No matching products',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF172B3A),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _search.isEmpty &&
-                                        _selectedCategory == _allCategories
-                                    ? 'Add your first product to start tracking stock.'
-                                    : 'Try changing your search or category.',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF71818A),
-                                ),
-                              ),
-                            ],
-                          )
+                  const SizedBox(height: 20),
+                  _buildActionBar(categories),
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : filtered.isEmpty
+                        ? _emptyProductsState(colorScheme)
                         : _isGridView
-                        ? _buildGridView(filtered)
-                        : ListView.builder(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(18, 0, 18, 100),
-                            itemCount: filtered.length,
-                            itemBuilder: (_, index) => Padding(
-                              padding: const EdgeInsets.only(bottom: 11),
-                              child: _buildProductCard(filtered[index]),
-                            ),
-                          ),
+                        ? RefreshIndicator(
+                            onRefresh: _load,
+                            child: _buildGridView(filtered),
+                          )
+                        : _buildProductTable(filtered),
                   ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAddProduct() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const ProductFormScreen(),
+    );
+    if (mounted) _load();
+  }
+
+  Widget _buildActionBar(List<String> categories) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final search = TextField(
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded),
+            hintText: 'Search products or SKU...',
+            isDense: true,
+          ),
+          onChanged: (value) => setState(() => _search = value),
+        );
+        final categoryDropdown = DropdownButtonFormField<String>(
+          initialValue: categories.contains(_selectedCategory)
+              ? _selectedCategory
+              : _allCategories,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Category',
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+          items: categories
+              .map(
+                (category) => DropdownMenuItem(
+                  value: category,
+                  child: Text(category, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: (category) {
+            if (category != null) {
+              setState(() => _selectedCategory = category);
+            }
+          },
+        );
+        final sortDropdown = DropdownButtonFormField<String>(
+          initialValue: _selectedSort,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Sort by',
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+          items: _sortOptions
+              .map(
+                (option) => DropdownMenuItem(
+                  value: option,
+                  child: Text(option, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: (sort) {
+            if (sort != null) setState(() => _selectedSort = sort);
+          },
+        );
+        final toggle = IconButton.outlined(
+          tooltip: _isGridView ? 'Show as table' : 'Show as grid',
+          onPressed: () => setState(() => _isGridView = !_isGridView),
+          icon: Icon(
+            _isGridView ? Icons.table_rows_rounded : Icons.grid_view_rounded,
+          ),
+        );
+        final addButton = FilledButton.icon(
+          onPressed: _openAddProduct,
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('Add Product'),
+        );
+
+        if (constraints.maxWidth >= 940) {
+          return Row(
+            children: [
+              Expanded(flex: 3, child: search),
+              const SizedBox(width: 10),
+              SizedBox(width: 170, child: categoryDropdown),
+              const SizedBox(width: 10),
+              SizedBox(width: 180, child: sortDropdown),
+              const SizedBox(width: 8),
+              toggle,
+              const SizedBox(width: 8),
+              addButton,
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            search,
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(width: 160, child: categoryDropdown),
+                SizedBox(width: 180, child: sortDropdown),
+                toggle,
+                addButton,
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _emptyProductsState(ColorScheme colorScheme) {
+    final noProducts = _search.isEmpty && _selectedCategory == _allCategories;
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(28),
+        children: [
+          const SizedBox(height: 60),
+          Icon(
+            noProducts ? Icons.inventory_2_outlined : Icons.search_off_rounded,
+            size: 52,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 15),
+          Text(
+            noProducts ? 'Your catalog is ready' : 'No matching products',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            noProducts
+                ? 'Add your first product to start tracking stock.'
+                : 'Try changing your search or category.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
+    );
+  }
+
+  Widget _buildProductTable(List<Map<String, dynamic>> products) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 760;
+        final tableWidth = compact
+            ? math.max(620.0, constraints.maxWidth).toDouble()
+            : constraints.maxWidth;
+        return RefreshIndicator(
+          onRefresh: _load,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: tableWidth,
+              child: Column(
+                children: [
+                  _tableHeader(compact),
+                  Expanded(
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: products.length,
+                      itemBuilder: (context, index) =>
+                          _productTableRow(products[index], compact),
+                    ),
+                  ),
+                  _tableFooter(products.length),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tableHeader(bool compact) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        border: Border(
+          bottom: BorderSide(color: colorScheme.outlineVariant),
+          top: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Expanded(flex: 5, child: _TableHeaderLabel('PRODUCT')),
+          if (!compact)
+            const Expanded(flex: 2, child: _TableHeaderLabel('CATEGORY')),
+          const Expanded(flex: 2, child: _TableHeaderLabel('STOCK')),
+          const Expanded(flex: 2, child: _TableHeaderLabel('STATUS')),
+          if (!compact)
+            const Expanded(flex: 2, child: _TableHeaderLabel('PRICE')),
+          const SizedBox(width: 44),
+        ],
+      ),
+    );
+  }
+
+  Widget _productTableRow(Map<String, dynamic> product, bool compact) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final quantity = _intValue(product['quantity']);
+    final minimum = _intValue(product['min_stock']);
+    final status = quantity <= 0
+        ? 'Out of stock'
+        : quantity <= minimum
+        ? 'Low stock'
+        : 'In stock';
+    final statusColor = status == 'Out of stock'
+        ? colorScheme.error
+        : status == 'Low stock'
+        ? colorScheme.tertiary
+        : colorScheme.primary;
+    final sku = product['sku']?.toString().trim();
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 76),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(
+                    Icons.inventory_2_outlined,
+                    color: colorScheme.onPrimaryContainer,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product['name']?.toString() ?? 'Unnamed product',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        sku == null || sku.isEmpty ? 'SKU not set' : sku,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!compact)
+            Expanded(
+              flex: 2,
+              child: Text(
+                _categoryName(product),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '$quantity units',
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (!compact)
+            Expanded(
+              flex: 2,
+              child: Text(
+                '₱${_doubleValue(product['price']).toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          SizedBox(width: 44, child: _productActions(product)),
+        ],
+      ),
+    );
+  }
+
+  Widget _productActions(Map<String, dynamic> product) {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      tooltip: 'Product actions',
+      onSelected: (value) async {
+        if (value == 'edit') {
+          await showDialog<void>(
+            context: context,
+            builder: (_) => ProductFormScreen(product: product),
+          );
+          if (mounted) _load();
+        } else if (value == 'in' || value == 'out') {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const ProductFormScreen()),
+            MaterialPageRoute(
+              builder: (_) => StockTransactionScreen(
+                product: product,
+                type: value == 'in' ? 'IN' : 'OUT',
+              ),
+            ),
           );
-          _load();
-        },
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Add product'),
+          if (mounted) _load();
+        } else if (value == 'delete') {
+          _delete(_intValue(product['id']));
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'edit', child: Text('Edit product')),
+        const PopupMenuItem(value: 'in', child: Text('Stock in')),
+        const PopupMenuItem(value: 'out', child: Text('Stock out')),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text(
+            'Delete',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tableFooter(int displayedCount) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant),
+          bottom: BorderSide(color: colorScheme.outlineVariant),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Showing $displayedCount of ${_products.length} products',
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          TextButton(onPressed: null, child: const Text('Previous')),
+          const SizedBox(width: 4),
+          FilledButton.tonal(onPressed: null, child: const Text('1')),
+          const SizedBox(width: 4),
+          TextButton(onPressed: null, child: const Text('2')),
+          const SizedBox(width: 4),
+          TextButton(onPressed: null, child: const Text('Next')),
+        ],
       ),
     );
   }
@@ -368,14 +655,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
     final minimum = _intValue(product['min_stock']);
     final price = _doubleValue(product['price']);
     final low = quantity <= minimum;
-    final stockColor = low ? const Color(0xFFE28B43) : const Color(0xFF087E76);
+    final colorScheme = Theme.of(context).colorScheme;
+    final stockColor = low ? colorScheme.tertiary : colorScheme.primary;
 
     return Card(
-      color: Colors.white,
+      color: colorScheme.surface,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE2E8EA)),
+        side: BorderSide(color: colorScheme.outlineVariant),
       ),
       child: Padding(
         padding: EdgeInsets.all(_isGridView ? 8 : 15),
@@ -393,15 +681,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   height: _isGridView ? 32 : 48,
                   decoration: BoxDecoration(
                     color: low
-                        ? const Color(0xFFFFF1E3)
-                        : const Color(0xFFE7F4F0),
+                        ? colorScheme.tertiaryContainer
+                        : colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(
                     Icons.inventory_2_rounded,
                     color: low
-                        ? const Color(0xFFE28B43)
-                        : const Color(0xFF087E76),
+                        ? colorScheme.onTertiaryContainer
+                        : colorScheme.primary,
                     size: _isGridView ? 18 : 24,
                   ),
                 ),
@@ -419,7 +707,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: _isGridView ? 12 : 16,
-                            color: const Color(0xFF172B3A),
+                            color: colorScheme.onSurface,
                           ),
                         ),
                         SizedBox(height: _isGridView ? 2 : 4),
@@ -427,8 +715,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           _categoryName(product),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF71818A),
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
                             fontSize: 12,
                           ),
                         ),
@@ -442,11 +730,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   tooltip: 'Product actions',
                   onSelected: (value) async {
                     if (value == 'edit') {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ProductFormScreen(product: product),
-                        ),
+                      await showDialog<void>(
+                        context: context,
+                        builder: (_) => ProductFormScreen(product: product),
                       );
                       _load();
                     } else if (value == 'in' || value == 'out') {
@@ -464,15 +750,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       _delete(_intValue(product['id']));
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Edit product')),
-                    PopupMenuItem(value: 'in', child: Text('Stock in')),
-                    PopupMenuItem(value: 'out', child: Text('Stock out')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Text('Edit product'),
+                    ),
+                    const PopupMenuItem(value: 'in', child: Text('Stock in')),
+                    const PopupMenuItem(value: 'out', child: Text('Stock out')),
                     PopupMenuItem(
                       value: 'delete',
                       child: Text(
                         'Delete',
-                        style: TextStyle(color: Color(0xFFB53F38)),
+                        style: TextStyle(color: colorScheme.error),
                       ),
                     ),
                   ],
@@ -492,8 +781,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   Expanded(
                     child: _productMetric(
                       'PRICE',
-                      '\$${price.toStringAsFixed(2)}',
-                      const Color(0xFF172B3A),
+                      '₱${price.toStringAsFixed(2)}',
+                      colorScheme.onSurface,
                     ),
                   ),
                 ],
@@ -512,14 +801,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     child: _productMetric(
                       'MINIMUM',
                       '$minimum units',
-                      const Color(0xFF71818A),
+                      colorScheme.onSurfaceVariant,
                     ),
                   ),
                   Expanded(
                     child: _productMetric(
                       'PRICE',
-                      '\$${price.toStringAsFixed(2)}',
-                      const Color(0xFF172B3A),
+                      '₱${price.toStringAsFixed(2)}',
+                      colorScheme.onSurface,
                     ),
                   ),
                   if (low) _lowStockBadge(),
@@ -532,16 +821,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _lowStockBadge() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF1E3),
+        color: colorScheme.tertiaryContainer,
         borderRadius: BorderRadius.circular(9),
       ),
-      child: const Text(
+      child: Text(
         'LOW',
         style: TextStyle(
-          color: Color(0xFFB56A2A),
+          color: colorScheme.onTertiaryContainer,
           fontWeight: FontWeight.w800,
           fontSize: 10,
         ),
@@ -550,13 +840,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _productMetric(String label, String value, Color color) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFF9AABB0),
+          style: TextStyle(
+            color: colorScheme.onSurfaceVariant,
             fontSize: 9,
             letterSpacing: 0.8,
             fontWeight: FontWeight.w800,
@@ -572,6 +863,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TableHeaderLabel extends StatelessWidget {
+  final String label;
+
+  const _TableHeaderLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 10,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }

@@ -25,8 +25,22 @@ void main() {
     expect(find.text('Coffee'), findsOneWidget);
     expect(find.text('Tea'), findsOneWidget);
     expect(find.text('Soap'), findsOneWidget);
+    expect(find.text('PRODUCT'), findsOneWidget);
+    expect(find.text('CURRENT STOCK'), findsOneWidget);
+    expect(find.text('MINIMUM'), findsOneWidget);
+    expect(find.text('Low stock'), findsNWidgets(2));
+    expect(find.text('Out of stock'), findsOneWidget);
+    expect(find.byType(PopupMenuButton<String>), findsNWidgets(3));
     expect(find.byType(SliverList), findsOneWidget);
 
+    await tester.enterText(find.byType(TextField), 'COF-001');
+    await tester.pumpAndSettle();
+    expect(find.text('Coffee'), findsOneWidget);
+    expect(find.text('Tea'), findsNothing);
+    expect(find.text('Soap'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Beverages').last);
@@ -47,9 +61,29 @@ void main() {
     expect(find.byIcon(Icons.warning_amber_rounded), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('shows an all-stocked-up empty state', (
+    WidgetTester tester,
+  ) async {
+    final api = _LowStockApiService(empty: true);
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: api,
+        child: const MaterialApp(home: Scaffold(body: LowStockScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('All stocked up!'), findsOneWidget);
+    expect(api.requestedPaths, ['/products/low-stock']);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _LowStockApiService extends ApiService {
+  _LowStockApiService({this.empty = false});
+
+  final bool empty;
   final requestedPaths = <String>[];
 
   @override
@@ -58,10 +92,12 @@ class _LowStockApiService extends ApiService {
     if (path != '/products/low-stock') {
       throw StateError('Unexpected API request: $path');
     }
+    if (empty) return [];
     return [
       {
         'id': 1,
         'name': 'Coffee',
+        'sku': 'COF-001',
         'category_name': 'Beverages',
         'quantity': '2',
         'min_stock': '10',
