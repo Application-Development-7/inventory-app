@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'register_screen.dart';
 import '../services/auth_service.dart';
+import '../widgets/auth_branding_panel.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _pass = TextEditingController();
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _rememberMe = false;
   String? _error;
 
   @override
@@ -41,9 +43,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _openRegister() async {
-    final username = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-    );
+    final username = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => const RegisterScreen()));
     if (!mounted || username == null) return;
     setState(() => _user.text = username);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -53,187 +55,282 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFE7F4F0), Color(0xFFF4F7F8), Color(0xFFFFF3E8)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+    final inheritedTheme = Theme.of(context);
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFFA78BFA),
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: const Color(0xFFA78BFA),
+          secondary: const Color(0xFFF472B6),
+          surface: Colors.white,
+        );
+    final theme = inheritedTheme.copyWith(
+      brightness: Brightness.light,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: Colors.white,
+      inputDecorationTheme: inheritedTheme.inputDecorationTheme.copyWith(
+        filled: true,
+        fillColor: Colors.white,
+        labelStyle: const TextStyle(color: Color(0xFF5F5B66)),
+        hintStyle: const TextStyle(color: Color(0xFF85818C)),
+        prefixIconColor: const Color(0xFF706B77),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE2DFE6)),
         ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(22),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFA78BFA), width: 1.5),
+        ),
+      ),
+    );
+
+    return Theme(
+      data: theme,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth > 900) {
+                return Row(
                   children: [
-                    Container(
-                      width: 76,
-                      height: 76,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF0B9585), Color(0xFF075B63)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF087E76)
-                                .withValues(alpha: 0.25),
-                            blurRadius: 24,
-                            offset: const Offset(0, 10),
+                    const Expanded(child: AuthBrandingPanel()),
+                    Expanded(
+                      child: Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 48,
+                            vertical: 32,
                           ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.inventory_2_rounded,
-                        color: Colors.white,
-                        size: 36,
-                      ),
-                    ),
-                    const SizedBox(height: 19),
-                    const Text(
-                      'Stockwise',
-                      style: TextStyle(
-                        color: Color(0xFF172B3A),
-                        fontSize: 29,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.6,
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    const Text(
-                      'A clearer view of your store.',
-                      style: TextStyle(color: Color(0xFF71818A), fontSize: 15),
-                    ),
-                    const SizedBox(height: 27),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(25),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Welcome back',
-                              style: TextStyle(
-                                color: Color(0xFF172B3A),
-                                fontSize: 21,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            const Text(
-                              'Sign in to manage your inventory.',
-                              style: TextStyle(color: Color(0xFF71818A)),
-                            ),
-                            const SizedBox(height: 23),
-                            TextField(
-                              controller: _user,
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'Username',
-                                prefixIcon: Icon(Icons.person_outline_rounded),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            TextField(
-                              controller: _pass,
-                              obscureText: _obscurePassword,
-                              autofillHints: const [],
-                              onSubmitted: (_) => _loading ? null : _submit(),
-                              decoration: InputDecoration(
-                                labelText: 'Password',
-                                prefixIcon: const Icon(
-                                  Icons.lock_outline_rounded,
-                                ),
-                                suffixIcon: IconButton(
-                                  tooltip: _obscurePassword
-                                      ? 'Show password'
-                                      : 'Hide password',
-                                  onPressed: () => setState(
-                                    () => _obscurePassword = !_obscurePassword,
-                                  ),
-                                  icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (_error != null) ...[
-                              const SizedBox(height: 15),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFEFED),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  _error!,
-                                  style: const TextStyle(
-                                    color: Color(0xFFB53F38),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 21),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: _loading ? null : _submit,
-                                child: _loading
-                                    ? const SizedBox(
-                                        width: 21,
-                                        height: 21,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Text('Sign in'),
-                                          SizedBox(width: 8),
-                                          Icon(
-                                            Icons.arrow_forward_rounded,
-                                            size: 18,
-                                          ),
-                                        ],
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Center(
-                              child: TextButton(
-                                onPressed: _loading ? null : _openRegister,
-                                child: const Text('Create an account'),
-                              ),
-                            ),
-                          ],
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 400),
+                            child: _buildLoginForm(theme, colorScheme),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    const Text(
-                      'Everything in your store, in one place.',
-                      style: TextStyle(color: Color(0xFF71818A), fontSize: 12),
                     ),
                   ],
+                );
+              }
+
+              return Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 32,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: _buildLoginForm(theme, colorScheme),
+                  ),
                 ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginForm(ThemeData theme, ColorScheme colorScheme) {
+    final mutedColor = colorScheme.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'WELCOME BACK',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: colorScheme.primary,
+            letterSpacing: 1.3,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Sign in to Stockwise',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            color: const Color(0xFF211F2B),
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.6,
+          ),
+        ),
+        const SizedBox(height: 9),
+        Text(
+          'Enter your details to access your inventory workspace.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: mutedColor,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 30),
+        TextField(
+          controller: _user,
+          textInputAction: TextInputAction.next,
+          style: const TextStyle(color: Colors.black87),
+          decoration: InputDecoration(
+            labelText: 'Username',
+            prefixIcon: const Icon(Icons.person_outline_rounded),
+            filled: true,
+            fillColor: Colors.white,
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE2DFE6)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color(0xFFA78BFA),
+                width: 1.5,
               ),
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _pass,
+          obscureText: _obscurePassword,
+          autofillHints: const [],
+          onSubmitted: (_) => _loading ? null : _submit(),
+          style: const TextStyle(color: Colors.black87),
+          decoration: InputDecoration(
+            labelText: 'Password',
+            prefixIcon: const Icon(Icons.lock_outline_rounded),
+            filled: true,
+            fillColor: Colors.white,
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE2DFE6)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color(0xFFA78BFA),
+                width: 1.5,
+              ),
+            ),
+            suffixIcon: TextButton(
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+              child: Text(_obscurePassword ? 'Show' : 'Hide'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 360) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildRememberMe(theme, colorScheme),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _buildForgotPasswordButton(),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: _buildRememberMe(theme, colorScheme)),
+                _buildForgotPasswordButton(),
+              ],
+            );
+          },
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFEFED),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF5D0CB)),
+            ),
+            child: Text(
+              _error!,
+              style: const TextStyle(color: Color(0xFFB53F38)),
+            ),
+          ),
+        ],
+        const SizedBox(height: 22),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton(
+            onPressed: _loading ? null : _submit,
+            child: _loading
+                ? const SizedBox(
+                    width: 21,
+                    height: 21,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Sign in'),
+                      SizedBox(width: 9),
+                      Icon(Icons.arrow_forward_rounded, size: 18),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: TextButton(
+            onPressed: _loading ? null : _openRegister,
+            child: const Text('Create an account'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRememberMe(ThemeData theme, ColorScheme colorScheme) {
+    return SizedBox(
+      height: 40,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Checkbox(
+            value: _rememberMe,
+            onChanged: (value) => setState(() => _rememberMe = value ?? false),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              'Remember me',
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF333039),
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildForgotPasswordButton() {
+    return TextButton(
+      onPressed: () {},
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: const Text('Forgot password?'),
     );
   }
 }

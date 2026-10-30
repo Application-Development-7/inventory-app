@@ -5,6 +5,33 @@ import 'package:inventory_app/services/api_service.dart';
 import 'package:provider/provider.dart';
 
 void main() {
+  testWidgets('opens the product form in a centered modal dialog', (
+    WidgetTester tester,
+  ) async {
+    final api = _ProductsApiService();
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: api,
+        child: const MaterialApp(home: ProductsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add Product'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.text('NEW INVENTORY ITEM'), findsOneWidget);
+    expect(find.text('Add a product'), findsOneWidget);
+    expect(find.text('Initial stock'), findsOneWidget);
+    expect(find.text('Minimum stock'), findsOneWidget);
+    expect(api.requestedPaths, ['/products', '/categories']);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+  });
+
   testWidgets('filters, sorts, and switches product layouts locally', (
     WidgetTester tester,
   ) async {
@@ -65,6 +92,12 @@ class _ProductsApiService extends ApiService {
   @override
   Future<dynamic> get(String path) async {
     requestedPaths.add(path);
+    if (path == '/categories') {
+      return [
+        {'id': 1, 'name': 'Food'},
+        {'id': 2, 'name': 'Home'},
+      ];
+    }
     if (path == '/products') {
       return [
         {
