@@ -15,6 +15,11 @@ class DemandForecastCard extends StatelessWidget {
   List<Map<String, dynamic>> get _projections =>
       (trend['projections'] as List? ?? const []).cast<Map<String, dynamic>>();
 
+  double _numberValue(dynamic value) {
+    if (value is num) return value.toDouble();
+    return num.tryParse(value?.toString() ?? '')?.toDouble() ?? 0.0;
+  }
+
   String _monthLabel(Map<String, dynamic> point) {
     const months = [
       '',
@@ -31,18 +36,26 @@ class DemandForecastCard extends StatelessWidget {
       'Nov',
       'Dec',
     ];
-    final month = (point['month'] as num?)?.toInt() ?? 0;
+    final month = _numberValue(point['month']).toInt();
     if (month < 1 || month > 12) return '';
     return months[month];
+  }
+
+  String _periodLabel(Map<String, dynamic> point) {
+    if (trend['view'] == 'yearly') {
+      return point['year']?.toString() ?? '';
+    }
+    return _monthLabel(point);
   }
 
   @override
   Widget build(BuildContext context) {
     final history = _history;
     final projections = _projections;
+    final isYearly = trend['view'] == 'yearly';
     final colorScheme = Theme.of(context).colorScheme;
     final label = trend['label']?.toString().replaceAll('_', ' ') ?? 'TREND';
-    final confidence = (trend['confidence'] as num?)?.toInt() ?? 0;
+    final confidence = _numberValue(trend['confidence']).toInt();
 
     return Card(
       child: Padding(
@@ -91,8 +104,8 @@ class DemandForecastCard extends StatelessWidget {
             else ...[
               _chart(context, history, projections),
               const SizedBox(height: 20),
-              const Text(
-                'MONTHLY FORECAST',
+              Text(
+                isYearly ? 'YEARLY FORECAST' : 'MONTHLY FORECAST',
                 style: TextStyle(
                   color: _teal,
                   letterSpacing: 1,
@@ -109,8 +122,8 @@ class DemandForecastCard extends StatelessWidget {
                   headingRowHeight: 40,
                   dataRowMinHeight: 42,
                   dataRowMaxHeight: 48,
-                  columns: const [
-                    DataColumn(label: Text('Date')),
+                  columns: [
+                    DataColumn(label: Text(isYearly ? 'Year' : 'Date')),
                     DataColumn(label: Text('Demand'), numeric: true),
                     DataColumn(label: Text('Confidence'), numeric: true),
                     DataColumn(label: Text('Trend')),
@@ -118,9 +131,15 @@ class DemandForecastCard extends StatelessWidget {
                   rows: projections.map((point) {
                     return DataRow(
                       cells: [
-                        DataCell(Text(_monthLabel(point))),
-                        DataCell(Text('${point['predicted_demand']} units')),
-                        DataCell(Text('${point['confidence']}%')),
+                        DataCell(Text(_periodLabel(point))),
+                        DataCell(
+                          Text(
+                            '${_numberValue(point['predicted_demand']).toInt()} units',
+                          ),
+                        ),
+                        DataCell(
+                          Text('${_numberValue(point['confidence']).toInt()}%'),
+                        ),
                         DataCell(
                           Text(
                             point['direction']?.toString() ?? 'STABLE',
@@ -153,10 +172,7 @@ class DemandForecastCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final historicalSpots = history.indexed.map((entry) {
       final (index, point) = entry;
-      return FlSpot(
-        index.toDouble(),
-        ((point['demand'] as num?) ?? 0).toDouble(),
-      );
+      return FlSpot(index.toDouble(), _numberValue(point['demand']));
     }).toList();
 
     final projectedSpots = <FlSpot>[
@@ -165,7 +181,7 @@ class DemandForecastCard extends StatelessWidget {
         final (index, point) = entry;
         return FlSpot(
           (history.length + index).toDouble(),
-          ((point['predicted_demand'] as num?) ?? 0).toDouble(),
+          _numberValue(point['predicted_demand']),
         );
       }),
     ];
@@ -229,7 +245,7 @@ class DemandForecastCard extends StatelessWidget {
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 30,
-                    interval: 3,
+                    interval: trend['view'] == 'yearly' ? 1 : 3,
                     getTitlesWidget: (value, _) {
                       final index = value.round();
                       if (index < 0 ||
@@ -240,7 +256,7 @@ class DemandForecastCard extends StatelessWidget {
                       return Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          _monthLabel(chartPoints[index]),
+                          _periodLabel(chartPoints[index]),
                           style: TextStyle(
                             color: colorScheme.onSurfaceVariant,
                             fontSize: 9,

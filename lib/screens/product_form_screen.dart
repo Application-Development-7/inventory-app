@@ -93,212 +93,215 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.product == null ? 'Add product' : 'Edit product'),
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final inputDecorationTheme = InputDecorationTheme(
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.38),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF087E76), Color(0xFF075B63)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+      ),
+    );
+
+    return Dialog(
+      backgroundColor: colorScheme.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 760),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Theme(
+            data: theme.copyWith(inputDecorationTheme: inputDecorationTheme),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'NEW INVENTORY ITEM',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colorScheme.primary,
+                              letterSpacing: 1.1,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            widget.product == null
+                                ? 'Add a product'
+                                : 'Edit product',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'Enter the product details below. It will appear at the top of your inventory.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(21),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      widget.product == null
-                          ? Icons.add_box_rounded
-                          : Icons.edit_note_rounded,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
+                const SizedBox(height: 22),
+                Flexible(
+                  child: SingleChildScrollView(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          widget.product == null
-                              ? 'Make room for something new'
-                              : 'Keep your catalog up to date',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                        TextField(
+                          controller: _name,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            labelText: 'Product name',
+                            hintText: 'e.g. Arc Wireless Mouse',
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Add the details that help you stay organized.',
-                          style: TextStyle(
-                            color: Color(0xFFD7EEEA),
-                            fontSize: 12,
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _sku,
+                                decoration: const InputDecoration(
+                                  labelText: 'SKU',
+                                  hintText: 'e.g. AW-2401',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                initialValue: _categoryId,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Category',
+                                ),
+                                items: _categories
+                                    .map(
+                                      (category) => DropdownMenuItem<int>(
+                                        value: category['id'],
+                                        child: Text(
+                                          category['name'],
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) =>
+                                    setState(() => _categoryId = value),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_categoryError != null) ...[
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: _loadCategories,
+                              icon: const Icon(Icons.refresh_rounded, size: 17),
+                              label: const Text('Retry loading categories'),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _qty,
+                                keyboardType: TextInputType.number,
+                                enabled: widget.product == null,
+                                decoration: InputDecoration(
+                                  labelText: 'Initial stock',
+                                  hintText: '0',
+                                  helperText: widget.product == null
+                                      ? null
+                                      : 'Managed with stock movements',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: _price,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Unit price',
+                                  hintText: '0.00',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _min,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Minimum stock',
+                            hintText: '5',
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 21),
-            const Text(
-              'PRODUCT DETAILS',
-              style: TextStyle(
-                color: Color(0xFF087E76),
-                letterSpacing: 1,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 11),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextField(
-                      controller: _name,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: 'Product name',
-                        prefixIcon: Icon(Icons.inventory_2_outlined),
-                      ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
                     ),
-                    const SizedBox(height: 13),
-                    DropdownButtonFormField<int>(
-                      initialValue: _categoryId,
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        prefixIcon: Icon(Icons.category_outlined),
-                      ),
-                      items: _categories
-                          .map(
-                            (c) => DropdownMenuItem<int>(
-                              value: c['id'],
-                              child: Text(c['name']),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setState(() => _categoryId = v),
-                    ),
-                    if (_categoryError != null) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _loadCategories,
-                          icon: const Icon(Icons.refresh_rounded, size: 17),
-                          label: const Text('Retry loading categories'),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 13),
-                    TextField(
-                      controller: _sku,
-                      decoration: const InputDecoration(
-                        labelText: 'SKU / product code',
-                        prefixIcon: Icon(Icons.qr_code_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 13),
-                    TextField(
-                      controller: _price,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Unit price',
-                        prefixIcon: Icon(Icons.attach_money_rounded),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_rounded),
+                      label: Text(
+                        widget.product == null ? 'Add product' : 'Save',
                       ),
                     ),
                   ],
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 20),
-            const Text(
-              'STOCK SETTINGS',
-              style: TextStyle(
-                color: Color(0xFF087E76),
-                letterSpacing: 1,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 11),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _qty,
-                      keyboardType: TextInputType.number,
-                      enabled: widget.product == null,
-                      decoration: InputDecoration(
-                        labelText: widget.product == null
-                            ? 'Starting quantity'
-                            : 'Current quantity',
-                        prefixIcon: const Icon(Icons.numbers_rounded),
-                        helperText: widget.product == null
-                            ? 'You can update this later with a stock movement.'
-                            : 'Use stock in or stock out to update quantity.',
-                      ),
-                    ),
-                    const SizedBox(height: 13),
-                    TextField(
-                      controller: _min,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Low-stock alert at',
-                        prefixIcon: Icon(Icons.notifications_active_outlined),
-                        helperText:
-                            'Get flagged when stock reaches this level.',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 23),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox.shrink()
-                    : const Icon(Icons.check_rounded),
-                label: _saving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        widget.product == null ? 'Add product' : 'Save changes',
-                      ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

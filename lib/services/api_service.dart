@@ -33,8 +33,41 @@ class ApiService {
     return _handle(res);
   }
 
-  Future<List<Map<String, dynamic>>> getTopProductsThisMonth() async {
-    final response = await get('/analytics/top-products');
+  Future<dynamic> getProductForecast(
+    String productId, {
+    String view = 'monthly',
+  }) {
+    if (view != 'monthly' && view != 'yearly') {
+      throw ArgumentError.value(view, 'view', 'Must be monthly or yearly');
+    }
+    return get('/forecast/product/$productId?view=$view');
+  }
+
+  Future<Map<String, dynamic>> getForecastTrends({
+    String view = 'monthly',
+  }) async {
+    if (view != 'monthly' && view != 'yearly') {
+      throw ArgumentError.value(view, 'view', 'Must be monthly or yearly');
+    }
+    final response = await get('/forecast/trends?view=$view');
+    return (response as Map).cast<String, dynamic>();
+  }
+
+  Future<List<Map<String, dynamic>>> getTopProductsThisMonth({
+    int? month,
+    String view = 'monthly',
+  }) async {
+    final normalizedView = view == 'yearly' ? 'yearly' : 'monthly';
+    final selectedMonth = month ?? DateTime.now().month;
+    if (selectedMonth < 1 || selectedMonth > 12) {
+      throw ArgumentError.value(month, 'month', 'Must be between 1 and 12');
+    }
+
+    final query = normalizedView == 'yearly'
+        ? '?view=$normalizedView'
+        : '?month=$selectedMonth&view=$normalizedView';
+
+    final response = await get('/analytics/top-products$query');
     return (response as List).cast<Map<String, dynamic>>();
   }
 
