@@ -1,10 +1,52 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inventory_app/screens/products_screen.dart';
 import 'package:inventory_app/services/api_service.dart';
+import 'package:inventory_app/widgets/skeleton_loader.dart';
 import 'package:provider/provider.dart';
 
 void main() {
+  testWidgets('shows product-row skeletons while products load', (
+    WidgetTester tester,
+  ) async {
+    final api = _DelayedProductsApiService();
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: api,
+        child: const MaterialApp(home: ProductsScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(SkeletonLoader), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    api.products.complete([]);
+    await tester.pumpAndSettle();
+    expect(find.byType(SkeletonLoader), findsNothing);
+  });
+
+  testWidgets('shows an API error object without crashing the product screen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: _ErrorProductsApiService(),
+        child: const MaterialApp(home: ProductsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Products response must be a JSON array'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Database error'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('opens the product form in a centered modal dialog', (
     WidgetTester tester,
   ) async {
@@ -74,6 +116,20 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Cereal').last).dy),
     );
 
+    await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Default').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alphabetical: A-Z').last);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('Banana').last).dy,
+      lessThan(tester.getTopLeft(find.text('Cereal').last).dy),
+    );
+
     await tester.tap(find.byTooltip('Show as grid'));
     await tester.pumpAndSettle();
     expect(find.byType(GridView), findsOneWidget);
@@ -84,10 +140,57 @@ void main() {
     expect(gridDelegate.childAspectRatio, 1.8);
     expect(api.requestedPaths, ['/products']);
   });
+
+  testWidgets('shows a red success snackbar after deleting a product', (
+    WidgetTester tester,
+  ) async {
+    final api = _ProductsApiService();
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: api,
+        child: const MaterialApp(home: ProductsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Product actions').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle();
+
+    expect(api.deletedPath, '/products/2');
+    expect(find.text('Product deleted'), findsOneWidget);
+    final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(snackBar.behavior, SnackBarBehavior.floating);
+    expect(snackBar.backgroundColor, ThemeData().colorScheme.error);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _DelayedProductsApiService extends ApiService {
+  final products = Completer<List<Map<String, dynamic>>>();
+
+  @override
+  Future<dynamic> get(String path) {
+    if (path == '/categories') return Future.value([]);
+    if (path == '/products') return products.future;
+    throw StateError('Unexpected API request: $path');
+  }
+}
+
+class _ErrorProductsApiService extends ApiService {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/products') return {'message': 'Database error'};
+    throw StateError('Unexpected API request: $path');
+  }
 }
 
 class _ProductsApiService extends ApiService {
   final requestedPaths = <String>[];
+  String? deletedPath;
 
   @override
   Future<dynamic> get(String path) async {
@@ -101,20 +204,20 @@ class _ProductsApiService extends ApiService {
     if (path == '/products') {
       return [
         {
-          'id': 1,
-          'name': 'Banana',
-          'category_name': 'Food',
-          'quantity': '9',
-          'min_stock': '2',
-          'price': '1.50',
-        },
-        {
           'id': 2,
           'name': 'Cereal',
           'category_name': 'Food',
           'quantity': null,
           'min_stock': '1',
           'price': null,
+        },
+        {
+          'id': 1,
+          'name': 'Banana',
+          'category_name': 'Food',
+          'quantity': '9',
+          'min_stock': '2',
+          'price': '1.50',
         },
         {
           'id': 3,
@@ -127,5 +230,11 @@ class _ProductsApiService extends ApiService {
       ];
     }
     throw StateError('Unexpected API request: $path');
+  }
+
+  @override
+  Future<dynamic> delete(String path) async {
+    deletedPath = path;
+    return {'message': 'Deleted'};
   }
 }

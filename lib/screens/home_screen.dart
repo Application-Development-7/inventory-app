@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -6,11 +7,12 @@ import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
-import '../services/theme_provider.dart';
 import 'product_form_screen.dart';
 import 'products_screen.dart';
 import 'low_stock_screen.dart';
 import 'trends_screen.dart';
+import 'settings_screen.dart';
+import '../widgets/skeleton_loader.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,18 +22,40 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _data;
+  List<Map<String, dynamic>> _recentTransactions = [];
   List<MapEntry<String, int>> _categoryStocks = [];
   String? _categoryStockError;
   String? _selectedTransactionCategory;
   int _index = 0;
   bool _loading = true;
+  bool _loadingMoreTransactions = false;
+  bool _hasMoreTransactions = false;
   bool _hideInventoryValue = false;
   DateTime? _selectedTransactionDate;
+  Timer? _greetingTimer;
+  int _inventoryRevision = 0;
 
   @override
   void initState() {
     super.initState();
     _loadDashboard();
+    _greetingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _greetingTimer?.cancel();
+    super.dispose();
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour <= 11) return 'Good morning';
+    if (hour >= 12 && hour <= 17) return 'Good afternoon';
+    if (hour >= 18 && hour <= 21) return 'Good evening';
+    return 'Good night';
   }
 
   Future<void> _refreshDashboard() => _loadDashboard();
@@ -81,9 +105,22 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = true);
     final api = context.read<ApiService>();
     try {
-      final data = await api.get('/dashboard');
+      final data = ApiService.parseObjectResponse(
+        await api.get('/dashboard'),
+        endpoint: 'Dashboard',
+      );
+      final transactions = ApiService.parseListResponseOrEmpty(
+        data['recent_transactions'],
+      );
+      final lowStockProducts = ApiService.parseListResponseOrEmpty(
+        data['low_stock_products'],
+      );
       if (mounted) {
-        setState(() => _data = data);
+        setState(() {
+          _data = {...data, 'low_stock_products': lowStockProducts};
+          _recentTransactions = transactions;
+          _hasMoreTransactions = transactions.length == 20;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -92,8 +129,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     try {
-      final products = (await api.get('/products') as List)
-          .cast<Map<String, dynamic>>();
+      final products = ApiService.parseListResponse(
+        await api.get('/products'),
+        endpoint: 'Products',
+      );
       final stockByCategory = <String, int>{};
       for (final product in products) {
         final rawCategory = product['category_name']?.toString().trim();
@@ -129,34 +168,77 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadMoreTransactions() async {
+    if (_loadingMoreTransactions || !_hasMoreTransactions) return;
+    final lastTransaction = _recentTransactions.last;
+    final beforeCreatedAt = lastTransaction['created_at']?.toString();
+    final beforeId = int.tryParse(lastTransaction['id']?.toString() ?? '');
+    if (beforeCreatedAt == null ||
+        beforeCreatedAt.isEmpty ||
+        beforeId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot load older activity right now.')),
+      );
+      return;
+    }
+
+    setState(() => _loadingMoreTransactions = true);
+    try {
+      final nextPage = await context
+          .read<ApiService>()
+          .getDashboardTransactions(
+            beforeCreatedAt: beforeCreatedAt,
+            beforeId: beforeId,
+          );
+      if (mounted) {
+        setState(() {
+          _recentTransactions = [..._recentTransactions, ...nextPage];
+          _hasMoreTransactions = nextPage.length == 20;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingMoreTransactions = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
-    final themeProvider = context.watch<ThemeProvider>();
+    if (auth.inventoryRevision != _inventoryRevision) {
+      _inventoryRevision = auth.inventoryRevision;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadDashboard();
+      });
+    }
     final colorScheme = Theme.of(context).colorScheme;
-    final pages = [
-      _dashboardView(),
-      const ProductsScreen(),
-      const LowStockScreen(),
-      const TrendsScreen(),
-    ];
+    final displayName = auth.displayName?.trim();
+    final sidebarName = displayName != null && displayName.isNotEmpty
+        ? displayName
+        : auth.username ?? 'Admin';
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 800;
+        final pages = [
+          _dashboardView(isDesktop: isDesktop),
+          const ProductsScreen(),
+          const LowStockScreen(),
+          const TrendsScreen(),
+          const SettingsScreen(),
+        ];
         return Scaffold(
           body: SafeArea(
             child: Row(
               children: [
-                if (isDesktop)
-                  _desktopSidebar(colorScheme, auth.username ?? 'Admin'),
+                if (isDesktop) _desktopSidebar(colorScheme, sidebarName),
                 Expanded(
                   child: Column(
                     children: [
-                      _topHeader(
-                        themeProvider,
-                        auth.username ?? 'Admin',
-                        showSearch: isDesktop,
-                      ),
+                      _topHeader(sidebarName, showSearch: isDesktop),
                       Expanded(child: pages[_index]),
                     ],
                   ),
@@ -186,6 +268,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icon(Icons.trending_up_rounded),
                       label: 'Trends',
                     ),
+                    NavigationDestination(
+                      icon: Icon(Icons.settings_rounded),
+                      label: 'Settings',
+                    ),
                   ],
                 ),
         );
@@ -193,11 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _topHeader(
-    ThemeProvider themeProvider,
-    String username, {
-    required bool showSearch,
-  }) {
+  Widget _topHeader(String profileName, {required bool showSearch}) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       height: 76,
@@ -238,17 +320,6 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.refresh_rounded),
             ),
           IconButton(
-            tooltip: themeProvider.isDarkMode
-                ? 'Switch to light mode'
-                : 'Switch to dark mode',
-            icon: Icon(
-              themeProvider.isDarkMode
-                  ? Icons.light_mode_rounded
-                  : Icons.dark_mode_rounded,
-            ),
-            onPressed: themeProvider.toggleTheme,
-          ),
-          IconButton(
             tooltip: 'Notifications',
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('You are all caught up.')),
@@ -260,7 +331,9 @@ class _HomeScreenState extends State<HomeScreen> {
             radius: 18,
             backgroundColor: colorScheme.primaryContainer,
             child: Text(
-              username.isEmpty ? 'A' : username[0].toUpperCase(),
+              profileName.trim().isEmpty
+                  ? 'A'
+                  : profileName.trim()[0].toUpperCase(),
               style: TextStyle(
                 color: colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.w700,
@@ -284,6 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
       (Icons.inventory_2_rounded, 'Products'),
       (Icons.warning_amber_rounded, 'Low Stock'),
       (Icons.trending_up_rounded, 'Trends'),
+      (Icons.settings_rounded, 'Settings'),
     ];
 
     return Container(
@@ -400,7 +474,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Log out?'),
         content: const Text(
-          'Are you sure you want to log out of your workspace?',
+          'Are you sure you want to sign out of your workspace?',
         ),
         actions: [
           TextButton(
@@ -565,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (_) => ',',
     );
-    return '₱$groupedWhole.${parts.last}';
+    return '${context.watch<AuthService>().currency}$groupedWhole.${parts.last}';
   }
 
   Widget _kpiCards(Map stats) {
@@ -587,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
         valueText,
         Icons.account_balance_wallet_outlined,
         Theme.of(context).colorScheme.secondary,
-        inventoryValue == null ? 'Not provided by API' : 'Current value',
+        'Current value',
       ),
       (
         'Units in Stock',
@@ -607,7 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1100
+        final columns = constraints.maxWidth >= 900
             ? 4
             : constraints.maxWidth >= 580
             ? 2
@@ -697,6 +771,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 14),
             Text(
+              key: ValueKey('kpi-value-$title'),
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -728,7 +803,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _stockCategoryChartCard() {
+  Widget _stockCategoryChartCard({bool expandChart = false}) {
     final colorScheme = Theme.of(context).colorScheme;
     final values = _categoryStocks
         .map((entry) => entry.value.toDouble())
@@ -738,6 +813,7 @@ class _HomeScreenState extends State<HomeScreen> {
         : math.max(1.0, values.reduce(math.max) * 1.2);
     final maxX = math.max(1, _categoryStocks.length - 1).toDouble();
 
+    final chart = _categoryStockChart(maxX, maxY, colorScheme);
     return _dashboardSummaryCard(
       title: 'Stock by Category',
       subtitle: 'Current units on hand across your categories',
@@ -780,119 +856,184 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      child: SizedBox(
-        height: 270,
-        child: _categoryStockError != null
-            ? Center(
-                child: Text(
-                  'Could not load category stock.',
-                  style: TextStyle(color: colorScheme.error),
-                ),
-              )
-            : _categoryStocks.isEmpty
-            ? Center(
-                child: Text(
-                  'No category stock to show.',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
-                ),
-              )
-            : LineChart(
-                LineChartData(
-                  minX: 0,
-                  maxX: maxX,
-                  minY: 0,
-                  maxY: maxY,
-                  gridData: FlGridData(
-                    drawVerticalLine: false,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 38,
-                        getTitlesWidget: (value, _) => Text(
-                          value.toInt().toString(),
-                          style: TextStyle(
-                            color: colorScheme.onSurfaceVariant,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 38,
-                        interval: _categoryStocks.length > 6
-                            ? (_categoryStocks.length / 5).ceilToDouble()
-                            : 1,
-                        getTitlesWidget: (value, _) {
-                          final index = value.round();
-                          if (index < 0 ||
-                              index >= _categoryStocks.length ||
-                              (value - index).abs() > 0.1) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: SizedBox(
-                              width: 70,
-                              child: Text(
-                                _categoryStocks[index].key,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: _categoryStocks.indexed
-                          .map(
-                            (entry) => FlSpot(
-                              entry.$1.toDouble(),
-                              entry.$2.value.toDouble(),
-                            ),
-                          )
-                          .toList(),
-                      isCurved: true,
-                      curveSmoothness: 0.25,
-                      color: colorScheme.primary,
-                      barWidth: 3,
-                      dotData: const FlDotData(show: true),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: colorScheme.primary.withValues(alpha: 0.1),
-                      ),
-                    ),
-                  ],
+      expandChild: expandChart,
+      child: expandChart ? chart : SizedBox(height: 270, child: chart),
+    );
+  }
+
+  Widget _categoryStockChart(
+    double maxX,
+    double maxY,
+    ColorScheme colorScheme,
+  ) {
+    if (_categoryStockError != null) {
+      return Center(
+        child: Text(
+          'Could not load category stock.',
+          style: TextStyle(color: colorScheme.error),
+        ),
+      );
+    }
+    if (_categoryStocks.isEmpty) {
+      return Center(
+        child: Text(
+          'No category stock to show.',
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: maxX,
+        minY: 0,
+        maxY: maxY,
+        gridData: FlGridData(
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+            strokeWidth: 1,
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 38,
+              getTitlesWidget: (value, _) => Text(
+                value.toInt().toString(),
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 10,
                 ),
               ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: _categoryStocks.length > 6
+                  ? (_categoryStocks.length / 5).ceilToDouble()
+                  : 1,
+              getTitlesWidget: (value, meta) {
+                final index = value.round();
+                if (index < 0 ||
+                    index >= _categoryStocks.length ||
+                    (value - index).abs() > 0.1) {
+                  return const SizedBox.shrink();
+                }
+                return SideTitleWidget(
+                  meta: meta,
+                  angle: -math.pi / 4,
+                  space: 4,
+                  child: SizedBox(
+                    width: 90,
+                    child: Text(
+                      _categoryStocks[index].key,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: _categoryStocks.indexed
+                .map(
+                  (entry) =>
+                      FlSpot(entry.$1.toDouble(), entry.$2.value.toDouble()),
+                )
+                .toList(),
+            isCurved: true,
+            curveSmoothness: 0.25,
+            color: colorScheme.primary,
+            barWidth: 3,
+            dotData: const FlDotData(show: true),
+            belowBarData: BarAreaData(
+              show: true,
+              color: colorScheme.primary.withValues(alpha: 0.1),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _recentActivityCard(List<Map<String, dynamic>> transactions) {
+  Widget _recentActivityCard(
+    List<Map<String, dynamic>> transactions, {
+    bool fillAvailableHeight = false,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final activityContent = Column(
+      children: [
+        if (_selectedTransactionDate != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _selectedTransactionDate = null),
+              icon: const Icon(Icons.close_rounded, size: 16),
+              label: const Text('Clear date filter'),
+            ),
+          ),
+        Expanded(
+          child: Scrollbar(
+            child: transactions.isEmpty
+                ? ListView(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 28),
+                        child: Center(
+                          child: Text(
+                            'No recent activity.',
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.zero,
+                    itemCount: transactions.length,
+                    itemBuilder: (context, index) =>
+                        _activityRow(transactions[index]),
+                  ),
+          ),
+        ),
+        if (_hasMoreTransactions)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: TextButton(
+              onPressed: _loadingMoreTransactions
+                  ? null
+                  : _loadMoreTransactions,
+              child: _loadingMoreTransactions
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Load More'),
+            ),
+          ),
+      ],
+    );
     return _dashboardSummaryCard(
       title: 'Recent Activity',
       trailing: Row(
@@ -926,38 +1067,26 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          if (_selectedTransactionDate != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () =>
-                    setState(() => _selectedTransactionDate = null),
-                icon: const Icon(Icons.close_rounded, size: 16),
-                label: const Text('Clear date filter'),
-              ),
-            ),
-          if (transactions.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 28),
-              child: Text(
-                'No recent activity.',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
-              ),
-            )
-          else
-            for (final transaction in transactions.take(5))
-              _activityRow(transaction),
-        ],
-      ),
+      expandChild: fillAvailableHeight,
+      child: fillAvailableHeight
+          ? activityContent
+          : SizedBox(height: 320, child: activityContent),
     );
   }
 
   Widget _activityRow(Map<String, dynamic> transaction) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isIn = transaction['type'] == 'IN';
-    final accent = isIn ? colorScheme.primary : colorScheme.error;
+    final type = transaction['type']?.toString() ?? '';
+    final isAudit = type.startsWith('AUDIT_');
+    final isIn = type == 'IN';
+    final isDelete = type == 'AUDIT_DELETE';
+    final accent = isDelete || (!isAudit && !isIn)
+        ? colorScheme.error
+        : colorScheme.primary;
+    final activityLabel = isAudit
+        ? transaction['action']?.toString() ?? 'Product updated'
+        : '${isIn ? 'Stock in' : 'Stock out'} · '
+              '${transaction['quantity'] ?? 0} units';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
@@ -970,7 +1099,15 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(11),
             ),
             child: Icon(
-              isIn ? Icons.south_west_rounded : Icons.north_east_rounded,
+              isAudit
+                  ? switch (type) {
+                      'AUDIT_ADD' => Icons.add_box_outlined,
+                      'AUDIT_DELETE' => Icons.delete_outline_rounded,
+                      _ => Icons.edit_outlined,
+                    }
+                  : isIn
+                  ? Icons.south_west_rounded
+                  : Icons.north_east_rounded,
               color: accent,
               size: 18,
             ),
@@ -992,8 +1129,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${isIn ? 'Stock in' : 'Stock out'} · '
-                  '${transaction['quantity'] ?? 0} units',
+                  activityLabel,
                   style: TextStyle(
                     color: colorScheme.onSurfaceVariant,
                     fontSize: 11,
@@ -1017,72 +1153,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _topCategoriesCard() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final topCategories = [..._categoryStocks]
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final totalStock = _categoryStocks.fold<int>(
-      0,
-      (total, category) => total + category.value,
-    );
-    return _dashboardSummaryCard(
-      title: 'Top Categories',
-      subtitle: 'Stock distribution by category',
-      child: topCategories.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Text(
-                'Category stock is not available.',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
-              ),
-            )
-          : Column(
-              children: topCategories.take(5).map((category) {
-                final proportion = totalStock == 0
-                    ? 0.0
-                    : (category.value / totalStock).clamp(0.0, 1.0);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              category.key,
-                              style: TextStyle(
-                                color: colorScheme.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '${category.value} units',
-                            style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: LinearProgressIndicator(
-                          value: proportion,
-                          minHeight: 8,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
     );
   }
 
@@ -1151,9 +1221,83 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _dashboardView() {
+  Widget _topCategoriesCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final categories = [..._categoryStocks]
+      ..sort((first, second) => second.value.compareTo(first.value));
+    final topCategories = categories.take(5).toList();
+    final totalStock = categories.fold<int>(
+      0,
+      (total, category) => total + category.value,
+    );
+
+    return _dashboardSummaryCard(
+      title: 'Top Categories',
+      subtitle: 'Categories with the most stock',
+      child: topCategories.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Text(
+                'No category stock to show.',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+            )
+          : Column(
+              children: [
+                for (final category in topCategories)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                category.key,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colorScheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${category.value}',
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 7),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: totalStock == 0
+                                ? 0
+                                : category.value / totalStock,
+                            minHeight: 7,
+                            backgroundColor:
+                                colorScheme.surfaceContainerHighest,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  Widget _dashboardView({required bool isDesktop}) {
     if (_loading && _data == null) {
-      return const Center(child: CircularProgressIndicator());
+      return SkeletonLoader.dashboard(desktop: isDesktop);
     }
     if (_data == null) {
       return Center(
@@ -1164,117 +1308,118 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    final low = (_data!['low_stock_products'] as List)
-        .cast<Map<String, dynamic>>();
-    final recent = (_data!['recent_transactions'] as List)
-        .cast<Map<String, dynamic>>();
-    final filteredRecent = recent.where((transaction) {
+    final low = ApiService.parseListResponseOrEmpty(
+      _data!['low_stock_products'],
+    );
+    final filteredRecent = _recentTransactions.where((transaction) {
       if (!_isOnSelectedDate(transaction)) return false;
       if (_selectedTransactionCategory == null) return true;
       return _transactionCategory(transaction) == _selectedTransactionCategory;
     }).toList();
-    final username = context.watch<AuthService>().username ?? 'admin';
+    final auth = context.watch<AuthService>();
+    final displayName = auth.displayName?.trim();
+    final username = displayName != null && displayName.isNotEmpty
+        ? displayName
+        : auth.username ?? 'admin';
     final stats = _data!['stats'] as Map? ?? const {};
+    final dashboardIntro = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_getGreeting()}, $username',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                'Here is what is happening with your inventory today.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 14),
+        FilledButton.icon(
+          onPressed: () async {
+            await showDialog<void>(
+              context: context,
+              builder: (_) => const ProductFormScreen(),
+            );
+            if (mounted) _loadDashboard();
+          },
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('Add Product'),
+        ),
+      ],
+    );
 
-    return RefreshIndicator(
-      onRefresh: _refreshDashboard,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final margin = constraints.maxWidth >= 800 ? 32.0 : 20.0;
-          return ListView(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final margin = isDesktop ? 32.0 : 20.0;
+        if (isDesktop) {
+          return RefreshIndicator(
+            onRefresh: _refreshDashboard,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.all(margin),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  dashboardIntro,
+                  const SizedBox(height: 24),
+                  _kpiCards(stats),
+                  const SizedBox(height: 22),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: _recentActivityCard(filteredRecent),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(child: _stockCategoryChartCard()),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _alertCard(low),
+                  const SizedBox(height: 16),
+                  _topCategoriesCard(),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: _refreshDashboard,
+          child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.all(margin),
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Good morning, $username',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          'Here is what is happening with your inventory today.',
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      await showDialog<void>(
-                        context: context,
-                        builder: (_) => const ProductFormScreen(),
-                      );
-                      if (mounted) _loadDashboard();
-                    },
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add Product'),
-                  ),
-                ],
-              ),
+              dashboardIntro,
               const SizedBox(height: 24),
               _kpiCards(stats),
               const SizedBox(height: 22),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  if (constraints.maxWidth >= 900) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 2, child: _stockCategoryChartCard()),
-                        const SizedBox(width: 18),
-                        Expanded(child: _recentActivityCard(filteredRecent)),
-                      ],
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _stockCategoryChartCard(),
-                      const SizedBox(height: 16),
-                      _recentActivityCard(filteredRecent),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 18),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final categories = _topCategoriesCard();
-                  final alerts = _alertCard(low);
-                  if (constraints.maxWidth >= 900) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 2, child: categories),
-                        const SizedBox(width: 18),
-                        Expanded(child: alerts),
-                      ],
-                    );
-                  }
-                  return Column(
-                    children: [categories, const SizedBox(height: 16), alerts],
-                  );
-                },
-              ),
+              _recentActivityCard(filteredRecent),
+              const SizedBox(height: 16),
+              _stockCategoryChartCard(),
+              const SizedBox(height: 16),
+              _alertCard(low),
+              const SizedBox(height: 16),
+              _topCategoriesCard(),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1501,6 +1646,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String? subtitle,
     Widget? trailing,
     required Widget child,
+    bool expandChild = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
@@ -1545,7 +1691,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             const SizedBox(height: 12),
-            child,
+            if (expandChild) Expanded(child: child) else child,
           ],
         ),
       ),
@@ -1653,8 +1799,13 @@ class _HomeScreenState extends State<HomeScreen> {
     bool compact = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isIn = transaction['type'] == 'IN';
-    final color = isIn ? colorScheme.primary : colorScheme.error;
+    final type = transaction['type']?.toString() ?? '';
+    final isAudit = type.startsWith('AUDIT_');
+    final isIn = type == 'IN';
+    final isDelete = type == 'AUDIT_DELETE';
+    final color = isDelete || (!isAudit && !isIn)
+        ? colorScheme.error
+        : colorScheme.primary;
     final quantity = transaction['quantity']?.toString() ?? '0';
 
     return Card(
@@ -1679,7 +1830,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                isIn ? Icons.south_west_rounded : Icons.north_east_rounded,
+                isAudit
+                    ? switch (type) {
+                        'AUDIT_ADD' => Icons.add_box_outlined,
+                        'AUDIT_DELETE' => Icons.delete_outline_rounded,
+                        _ => Icons.edit_outlined,
+                      }
+                    : isIn
+                    ? Icons.south_west_rounded
+                    : Icons.north_east_rounded,
                 color: color,
                 size: compact ? 18 : 21,
               ),
@@ -1701,8 +1860,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${isIn ? 'Stock In' : 'Stock Out'} · '
-                    '${isIn ? '+' : '-'}$quantity units',
+                    isAudit
+                        ? transaction['action']?.toString() ?? 'Product updated'
+                        : '${isIn ? 'Stock In' : 'Stock Out'} · '
+                              '${isIn ? '+' : '-'}$quantity units',
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.w700,
