@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../widgets/auth_branding_panel.dart';
+import '../widgets/legal_document_dialog.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -15,6 +16,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _confirmPassword = TextEditingController();
   bool _loading = false;
   bool _obscurePassword = true;
   String? _error;
@@ -23,6 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _username.dispose();
     _password.dispose();
+    _confirmPassword.dispose();
     super.dispose();
   }
 
@@ -141,8 +144,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _password,
             obscureText: _obscurePassword,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _loading ? null : _submit(),
+            textInputAction: TextInputAction.next,
             decoration: InputDecoration(
               labelText: 'Password',
               prefixIcon: const Icon(Icons.lock_outline_rounded),
@@ -155,6 +157,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
             validator: (value) =>
                 value == null || value.isEmpty ? 'Enter a password' : null,
           ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _confirmPassword,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _loading ? null : _submit(),
+            decoration: const InputDecoration(
+              labelText: 'Confirm password',
+              prefixIcon: Icon(Icons.lock_outline_rounded),
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Confirm your password';
+              }
+              return value == _password.text ? null : 'Passwords do not match';
+            },
+          ),
           const SizedBox(height: 14),
           FormField<bool>(
             initialValue: false,
@@ -163,20 +182,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
             builder: (field) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CheckboxListTile(
-                  value: field.value ?? false,
-                  onChanged: (value) => field.didChange(value ?? false),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  visualDensity: VisualDensity.compact,
-                  title: Text(
-                    'I agree to the Terms of Service and Privacy Policy.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface,
-                      height: 1.4,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Checkbox(
+                      value: field.value ?? false,
+                      onChanged: (value) => field.didChange(value ?? false),
+                      visualDensity: VisualDensity.compact,
                     ),
-                  ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 7),
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'I agree to the ',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface,
+                                height: 1.4,
+                              ),
+                            ),
+                            _buildLegalLink(
+                              'Terms of Service',
+                              LegalDocument.termsOfService,
+                              theme,
+                            ),
+                            Text(
+                              ' and ',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface,
+                                height: 1.4,
+                              ),
+                            ),
+                            _buildLegalLink(
+                              'Privacy Policy',
+                              LegalDocument.privacyPolicy,
+                              theme,
+                            ),
+                            Text(
+                              '.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 if (field.hasError)
                   Padding(
@@ -259,6 +315,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLegalLink(
+    String label,
+    LegalDocument document,
+    ThemeData theme,
+  ) {
+    return TextButton(
+      onPressed: _loading
+          ? null
+          : () => LegalDocumentDialog.show(context, document),
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.primary,
+          decoration: TextDecoration.underline,
+        ),
       ),
     );
   }

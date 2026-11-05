@@ -20,6 +20,14 @@ import 'package:inventory_app/widgets/demand_forecast_card.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+String _greetingFor(DateTime dateTime) {
+  final hour = dateTime.hour;
+  if (hour >= 5 && hour <= 11) return 'Good morning';
+  if (hour >= 12 && hour <= 17) return 'Good afternoon';
+  if (hour >= 18 && hour <= 21) return 'Good evening';
+  return 'Good night';
+}
+
 void main() {
   testWidgets('applies soft page transitions across requested platforms', (
     WidgetTester tester,
@@ -69,8 +77,22 @@ void main() {
       tester.widgetList<TextField>(find.byType(TextField)).last.autofillHints,
       isEmpty,
     );
-    expect(find.text('Forgot password?'), findsOneWidget);
+    expect(find.text('Forgot password?'), findsNothing);
+    expect(find.text('Terms of Service'), findsOneWidget);
+    expect(find.text('Privacy Policy'), findsOneWidget);
     expect(find.text('Continue with Google'), findsNothing);
+
+    await tester.tap(find.text('Terms of Service'));
+    await tester.pumpAndSettle();
+    expect(find.text('1. Acceptance of Terms'), findsOneWidget);
+    expect(
+      find.text(
+        'By accessing and using Stockwise, you agree to be bound by these Terms of Service. If you do not agree, please do not use the application.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('shows split-screen branding on desktop login', (
@@ -118,6 +140,58 @@ void main() {
     },
   );
 
+  testWidgets('loads more recommendations in scrollable batches', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _FakeForecastApiService(recommendationCount: 8);
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: api,
+        child: const MaterialApp(home: Scaffold(body: TrendsScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('AI recommendations'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Extra Recommendation 4'), findsOneWidget);
+    expect(find.text('Extra Recommendation 8'), findsNothing);
+    final recommendationsCard = find.ancestor(
+      of: find.text('AI recommendations'),
+      matching: find.byType(Card),
+    );
+    final recommendationScroll = find.descendant(
+      of: recommendationsCard,
+      matching: find.byType(Scrollable),
+    );
+    final loadMore = find.text('Load More');
+    await tester.scrollUntilVisible(
+      loadMore,
+      120,
+      scrollable: recommendationScroll,
+    );
+    await tester.ensureVisible(loadMore);
+    await tester.pumpAndSettle();
+    await tester.tap(loadMore);
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Extra Recommendation 8'),
+      120,
+      scrollable: recommendationScroll,
+    );
+    expect(find.text('Extra Recommendation 8'), findsOneWidget);
+    expect(find.text('Load More'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('toggles login password visibility and remember me checkbox', (
     WidgetTester tester,
   ) async {
@@ -142,10 +216,13 @@ void main() {
   testWidgets('shows desktop dashboard sidebar and responsive content', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'username': 'admin',
+      'displayName': 'Neil',
+    });
     await tester.binding.setSurfaceSize(const Size(1280, 900));
     final api = _FakeHomeApiService();
-    final auth = AuthService()..username = 'admin';
+    final auth = AuthService();
     final theme = ThemeProvider();
 
     await tester.pumpWidget(
@@ -162,7 +239,7 @@ void main() {
 
     expect(find.text('Stockwise'), findsOneWidget);
     expect(find.text('Inventory Health'), findsOneWidget);
-    expect(find.text('Good morning, admin'), findsOneWidget);
+    expect(find.text('${_greetingFor(DateTime.now())}, Neil'), findsOneWidget);
     expect(find.text('Recent Activity'), findsOneWidget);
     expect(find.byType(LineChart), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
@@ -174,7 +251,7 @@ void main() {
   testWidgets('keeps bottom navigation on narrow screens', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'username': 'admin'});
     await tester.binding.setSurfaceSize(const Size(390, 844));
     final api = _FakeHomeApiService();
     final auth = AuthService()..username = 'admin';
@@ -194,6 +271,7 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Stockwise'), findsNothing);
+    expect(find.text('${_greetingFor(DateTime.now())}, admin'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.binding.setSurfaceSize(null);
   });
@@ -212,7 +290,7 @@ void main() {
     expect(find.text('Start managing smarter'), findsOneWidget);
     expect(find.text('Username'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
-    expect(find.text('Confirm password'), findsNothing);
+    expect(find.text('Confirm password'), findsOneWidget);
     expect(find.text('Create account'), findsOneWidget);
     expect(find.text('Continue with Google'), findsNothing);
     expect(find.text('Already have an account? '), findsOneWidget);
@@ -239,7 +317,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: RegisterScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TextFormField), findsNWidgets(2));
+    expect(find.byType(TextFormField), findsNWidgets(3));
     await tester.tap(find.text('Create account'));
     await tester.pumpAndSettle();
 
@@ -307,8 +385,9 @@ void main() {
     expect(find.text('Individual Product Trends'), findsOneWidget);
     expect(find.text('Product'), findsOneWidget);
     expect(find.text('Demand overview'), findsOneWidget);
+    expect(find.byType(LineChart), findsOneWidget);
     expect(
-      find.text('Need at least 3 months of stock-out history'),
+      find.text('Estimated trend shown because sales history is limited.'),
       findsOneWidget,
     );
     await tester.scrollUntilVisible(
@@ -380,10 +459,7 @@ void main() {
     expect(api.lastForecastPath, '/forecast/product/2?view=monthly');
     expect(find.text('URGENT: Reorder stock now'), findsOneWidget);
     expect(find.text('Tea'), findsWidgets);
-    expect(
-      find.text('Need at least 3 months of stock-out history'),
-      findsOneWidget,
-    );
+    expect(find.byType(LineChart), findsOneWidget);
 
     final horizonDropdown = find.byType(DropdownButton<String>).first;
     await tester.scrollUntilVisible(
@@ -397,14 +473,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.lastForecastPath, '/forecast/product/2?view=yearly');
     expect(api.lastTrendsPath, '/forecast/trends?view=yearly');
-    expect(
-      find.text('Need at least 3 years of stock-out history'),
-      findsOneWidget,
-    );
+    expect(find.byType(LineChart), findsOneWidget);
     expect(
       find.text('Top Products in ${_monthName(selectedMonth)}'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('parses array responses from forecast trends', (
+    WidgetTester tester,
+  ) async {
+    final api = _FakeForecastApiService(trendsAsList: true);
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: api,
+        child: const MaterialApp(home: Scaffold(body: TrendsScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Coffee: rising'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -500,6 +589,11 @@ void main() {
     expect(find.text('Forecast accuracy'), findsOneWidget);
     expect(find.text('Potential stockouts'), findsOneWidget);
     expect(find.text('Revenue opportunity'), findsOneWidget);
+    final revenue = tester.widget<Text>(
+      find.byKey(const Key('forecast-kpi-Revenue opportunity')),
+    );
+    expect(revenue.data, startsWith('₱'));
+    expect(revenue.data, isNot('—'));
 
     await tester.scrollUntilVisible(
       find.textContaining('Top Products in'),
@@ -536,9 +630,15 @@ String _monthName(int month) => const [
 ][month - 1];
 
 class _FakeForecastApiService extends ApiService {
-  _FakeForecastApiService({this.withForecast = false});
+  _FakeForecastApiService({
+    this.withForecast = false,
+    this.trendsAsList = false,
+    this.recommendationCount = 3,
+  });
 
   final bool withForecast;
+  final bool trendsAsList;
+  final int recommendationCount;
   String? lastForecastPath;
   String? lastTopProductsPath;
   String? lastTrendsPath;
@@ -565,6 +665,16 @@ class _FakeForecastApiService extends ApiService {
     }
     if (path.startsWith('/forecast/trends')) {
       lastTrendsPath = path;
+      if (trendsAsList) {
+        return [
+          {
+            'product_id': 1,
+            'product_name': 'Coffee',
+            'status': 'OK',
+            'label': 'RISING',
+          },
+        ];
+      }
       return {
         'trends': const [],
         'recommendations': [
@@ -583,6 +693,14 @@ class _FakeForecastApiService extends ApiService {
             'title': 'Reorder Tea early',
             'description': 'Lead time may increase.',
           },
+          ...List.generate(
+            recommendationCount - 3,
+            (index) => {
+              'type': 'INFO',
+              'title': 'Extra Recommendation ${index + 4}',
+              'description': 'Additional recommendation for the test.',
+            },
+          ),
         ],
       };
     }
