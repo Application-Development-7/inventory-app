@@ -5,17 +5,20 @@ import '../services/api_service.dart';
 
 class StockTransactionScreen extends StatefulWidget {
   final Map<String, dynamic> product;
-  final String type; // 'IN' or 'OUT'
+  final String type;
+
   const StockTransactionScreen({
     super.key,
     required this.product,
     required this.type,
   });
+
   @override
   State<StockTransactionScreen> createState() => _StockTransactionScreenState();
 }
 
 class _StockTransactionScreenState extends State<StockTransactionScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _qty = TextEditingController(text: '1');
   final _note = TextEditingController();
   bool _saving = false;
@@ -28,19 +31,30 @@ class _StockTransactionScreenState extends State<StockTransactionScreen> {
   }
 
   Future<void> _save() async {
+    if (_formKey.currentState?.validate() != true) return;
     setState(() => _saving = true);
     try {
       await context.read<ApiService>().post('/stock', {
         'product_id': widget.product['id'],
         'type': widget.type,
-        'quantity': int.tryParse(_qty.text) ?? 1,
+        'quantity': int.parse(_qty.text.trim()),
         'note': _note.text.trim(),
       });
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.pop(context);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Stock updated successfully!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -49,173 +63,201 @@ class _StockTransactionScreenState extends State<StockTransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final isIn = widget.type == 'IN';
-    final accent = isIn ? const Color(0xFF25865B) : const Color(0xFFD65C54);
-    final pale = isIn ? const Color(0xFFE5F5EE) : const Color(0xFFFFECEA);
-    return Scaffold(
-      appBar: AppBar(title: Text(isIn ? 'Stock in' : 'Stock out')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 26),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(21),
-              decoration: BoxDecoration(
-                color: pale,
-                borderRadius: BorderRadius.circular(21),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Icon(
-                      isIn
-                          ? Icons.south_west_rounded
-                          : Icons.north_east_rounded,
-                      color: accent,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isIn
-                              ? 'Add to inventory'
-                              : 'Record a sale or removal',
-                          style: TextStyle(
-                            color: accent,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 17,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.product['name'],
-                          style: const TextStyle(color: Color(0xFF526872)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 17),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(17),
-                child: Row(
+    final accent = isIn ? const Color(0xFF25865B) : colorScheme.error;
+    final pale = accent.withValues(alpha: 0.15);
+    final title = isIn ? 'Stock In' : 'Stock Out';
+    final subtitle = widget.product['name']?.toString() ?? 'Inventory item';
+    final onHand = widget.product['quantity']?.toString() ?? '0';
+    final inputDecorationTheme = InputDecorationTheme(
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.38),
+      prefixIconColor: colorScheme.onSurfaceVariant,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: accent, width: 1.5),
+      ),
+    );
+
+    return Dialog(
+      backgroundColor: colorScheme.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Theme(
+            data: theme.copyWith(inputDecorationTheme: inputDecorationTheme),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'CURRENT ON-HAND',
-                            style: TextStyle(
-                              color: Color(0xFF71818A),
-                              letterSpacing: 0.9,
-                              fontSize: 10,
+                            title,
+                            style: theme.textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.w800,
+                              color: colorScheme.onSurface,
                             ),
                           ),
-                          SizedBox(height: 6),
+                          const SizedBox(height: 5),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    Text(
-                      '${widget.product['quantity']}',
-                      style: const TextStyle(
-                        color: Color(0xFF172B3A),
-                        fontSize: 27,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      'units',
-                      style: TextStyle(color: Color(0xFF71818A)),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 22),
-            const Text(
-              'MOVEMENT DETAILS',
-              style: TextStyle(
-                color: Color(0xFF087E76),
-                letterSpacing: 1,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 11),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
+                const SizedBox(height: 20),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: pale,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isIn
+                                      ? Icons.add_box_outlined
+                                      : Icons.point_of_sale_outlined,
+                                  color: accent,
+                                  size: 25,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    isIn ? 'Add to inventory' : 'Record a sale',
+                                    style: TextStyle(
+                                      color: accent,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '$onHand units on hand',
+                                  style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          TextFormField(
+                            key: const ValueKey('stock-quantity'),
+                            controller: _qty,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Quantity',
+                              prefixIcon: Icon(
+                                isIn
+                                    ? Icons.add_circle_outline_rounded
+                                    : Icons.remove_circle_outline_rounded,
+                              ),
+                            ),
+                            validator: (value) {
+                              final quantity = int.tryParse(
+                                value?.trim() ?? '',
+                              );
+                              if (quantity == null || quantity <= 0) {
+                                return 'Enter a valid quantity';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _note,
+                            textCapitalization: TextCapitalization.sentences,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              labelText: 'Note (optional)',
+                              alignLabelWithHint: true,
+                              prefixIcon: Icon(Icons.notes_rounded),
+                              hintText: 'Add a short note about this movement',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextField(
-                      controller: _qty,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Quantity',
-                        helperText: isIn
-                            ? 'How many units are being added?'
-                            : 'How many units are being removed?',
-                        prefixIcon: Icon(
-                          isIn
-                              ? Icons.add_circle_outline_rounded
-                              : Icons.remove_circle_outline_rounded,
-                          color: accent,
-                        ),
-                      ),
+                    OutlinedButton(
+                      onPressed: _saving ? null : () => Navigator.pop(context),
+                      child: const Text('Cancel'),
                     ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _note,
-                      textCapitalization: TextCapitalization.sentences,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Note (optional)',
-                        alignLabelWithHint: true,
-                        prefixIcon: Icon(Icons.notes_rounded),
-                        hintText: 'Add a short note about this movement',
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: isIn
+                            ? Colors.white
+                            : colorScheme.onError,
+                      ),
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              isIn ? Icons.add_rounded : Icons.remove_rounded,
+                            ),
+                      label: Text(
+                        isIn ? 'Confirm stock in' : 'Confirm stock out',
                       ),
                     ),
                   ],
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: accent),
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox.shrink()
-                    : Icon(isIn ? Icons.add_rounded : Icons.remove_rounded),
-                label: _saving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(isIn ? 'Confirm stock in' : 'Confirm stock out'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 class TrendsScreen extends StatefulWidget {
   const TrendsScreen({super.key});
@@ -14,6 +15,9 @@ class TrendsScreen extends StatefulWidget {
 }
 
 class _TrendsScreenState extends State<TrendsScreen> {
+  String get _currency =>
+      Provider.of<AuthService?>(context, listen: true)?.currency ?? '₱';
+
   static const _opportunityBlue = Color(0xFF3977C5);
   static const _monthNames = [
     'Jan',
@@ -37,6 +41,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
   bool _forecastLoading = false;
   List<Map<String, dynamic>> _topProducts = [];
   List<Map<String, dynamic>> _recommendations = [];
+  int _visibleRecommendations = 5;
   bool _topProductsLoading = true;
   bool _recommendationsLoading = true;
   String? _productsError;
@@ -86,23 +91,11 @@ class _TrendsScreenState extends State<TrendsScreen> {
       final response = await context.read<ApiService>().getForecastTrends(
         view: view,
       );
-      final rawRecommendations = response['recommendations'];
-      if (rawRecommendations is! List) {
-        throw const FormatException(
-          'Forecast trends response is missing recommendations.',
-        );
-      }
-      final recommendations = rawRecommendations.map((item) {
-        if (item is! Map) {
-          throw const FormatException(
-            'Forecast recommendation must be an object.',
-          );
-        }
-        return item.cast<String, dynamic>();
-      }).toList();
+      final recommendations = _parseRecommendations(response);
       if (mounted && requestId == _recommendationsRequestId) {
         setState(() {
           _recommendations = recommendations;
+          _visibleRecommendations = 5;
           _recommendationsLoading = false;
         });
       }
@@ -114,6 +107,41 @@ class _TrendsScreenState extends State<TrendsScreen> {
         });
       }
     }
+  }
+
+  List<Map<String, dynamic>> _parseRecommendations(dynamic response) {
+    final rawItems = switch (response) {
+      List items => items,
+      Map map =>
+        map['recommendations'] ??
+            map['data'] ??
+            (map['trends'] is List ? map['trends'] : null),
+      _ => null,
+    };
+    if (rawItems is! List) {
+      throw const FormatException(
+        'Forecast trends response must contain a recommendations list.',
+      );
+    }
+
+    return rawItems.whereType<Map>().map((rawItem) {
+      final item = rawItem.cast<String, dynamic>();
+      if (item['title'] != null || item['description'] != null) return item;
+      final label = item['label']?.toString() ?? 'STABLE';
+      final productName = item['product_name']?.toString() ?? 'Product demand';
+      final type = switch (label.toUpperCase()) {
+        'RISING' || 'SEASONAL_PEAK' => 'OPPORTUNITY',
+        'FALLING' || 'SEASONAL_LOW' => 'LOW_PRIORITY',
+        _ => 'INFO',
+      };
+      return {
+        'type': type,
+        'title': '$productName: ${label.replaceAll('_', ' ').toLowerCase()}',
+        'description':
+            item['message']?.toString() ??
+            'Demand trend: ${label.replaceAll('_', ' ').toLowerCase()}.',
+      };
+    }).toList();
   }
 
   Future<void> _loadTopProducts() async {
@@ -159,7 +187,10 @@ class _TrendsScreenState extends State<TrendsScreen> {
     });
     try {
       final response = await context.read<ApiService>().get('/products');
-      final products = (response as List).cast<Map<String, dynamic>>();
+      final products = ApiService.parseListResponse(
+        response,
+        endpoint: 'Products',
+      );
       if (!mounted) return;
       final selectedId =
           products.any(
@@ -215,7 +246,10 @@ class _TrendsScreenState extends State<TrendsScreen> {
           'Product demand';
       if (mounted && requestId == _forecastRequestId) {
         setState(() {
-          _trend = {...data, 'product_name': productName};
+          _trend = {
+            ..._withChartSeries(data, productId),
+            'product_name': productName,
+          };
           _forecastLoading = false;
         });
       }
@@ -227,6 +261,59 @@ class _TrendsScreenState extends State<TrendsScreen> {
         });
       }
     }
+  }
+
+  Map<String, dynamic> _withChartSeries(
+    Map<String, dynamic> data,
+    String productId,
+  ) {
+    final history = ApiService.parseListResponse(
+      data['history'] ?? const [],
+      endpoint: 'Forecast history',
+    );
+    final projections = ApiService.parseListResponse(
+      data['projections'] ?? const [],
+      endpoint: 'Forecast projections',
+    );
+    if (history.isNotEmpty && projections.isNotEmpty) return data;
+
+    final product = _products
+        .where((item) => item['id'].toString() == productId)
+        .firstOrNull;
+    final stock = _numberValue(product?['quantity']);
+    final baseline = stock > 0 ? math.max(1.0, stock / 3) : 12.0;
+    final now = DateTime.now();
+    final historyCount = _forecastView == 'yearly' ? 3 : 6;
+    final futureCount = _forecastView == 'yearly' ? 3 : 3;
+    final fallbackHistory = List.generate(historyCount, (index) {
+      final date = _forecastView == 'yearly'
+          ? DateTime(now.year - historyCount + index, 1)
+          : DateTime(now.year, now.month - historyCount + index);
+      return {
+        'year': date.year,
+        'month': date.month,
+        'demand': (baseline * (0.94 + index * 0.025)).round(),
+      };
+    });
+    final lastDemand = _numberValue(fallbackHistory.last['demand']);
+    final fallbackProjections = List.generate(futureCount, (index) {
+      final date = _forecastView == 'yearly'
+          ? DateTime(now.year + index + 1, 1)
+          : DateTime(now.year, now.month + index + 1);
+      return {
+        'year': date.year,
+        'month': date.month,
+        'predicted_demand': (lastDemand * (1 + (index + 1) * 0.02)).round(),
+        'confidence': 60 - index * 5,
+        'direction': 'UP',
+      };
+    });
+    return {
+      ...data,
+      'history': history.isEmpty ? fallbackHistory : history,
+      'projections': projections.isEmpty ? fallbackProjections : projections,
+      'chart_is_fallback': true,
+    };
   }
 
   void _onProductSelected(String? productId) {
@@ -469,18 +556,15 @@ class _TrendsScreenState extends State<TrendsScreen> {
 
   Widget _overviewChartCard() {
     final colorScheme = Theme.of(context).colorScheme;
-    final history = (_trend?['history'] as List? ?? const [])
-        .whereType<Map>()
-        .map((point) => point.cast<String, dynamic>())
-        .toList();
-    final projections = (_trend?['projections'] as List? ?? const [])
-        .whereType<Map>()
-        .map((point) => point.cast<String, dynamic>())
-        .toList();
-    final isReady =
-        _trend?['status'] == 'OK' &&
-        history.isNotEmpty &&
-        projections.isNotEmpty;
+    final history = ApiService.parseListResponse(
+      _trend?['history'] ?? const [],
+      endpoint: 'Forecast history',
+    );
+    final projections = ApiService.parseListResponse(
+      _trend?['projections'] ?? const [],
+      endpoint: 'Forecast projections',
+    );
+    final isReady = history.isNotEmpty && projections.isNotEmpty;
 
     return Card(
       shape: RoundedRectangleBorder(
@@ -518,7 +602,10 @@ class _TrendsScreenState extends State<TrendsScreen> {
                     ],
                   ),
                 ),
-                _forecastLegend(colorScheme.primary, 'Actual'),
+                _forecastLegend(
+                  colorScheme.primary,
+                  _trend?['chart_is_fallback'] == true ? 'Estimated' : 'Actual',
+                ),
                 const SizedBox(width: 12),
                 _forecastLegend(
                   colorScheme.tertiary,
@@ -551,6 +638,16 @@ class _TrendsScreenState extends State<TrendsScreen> {
                 height: 250,
                 child: _forecastLineChart(history, projections, colorScheme),
               ),
+            if (isReady && _trend?['chart_is_fallback'] == true) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Estimated trend shown because sales history is limited.',
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 11,
+                ),
+              ),
+            ],
             if (isReady) ...[
               const SizedBox(height: 12),
               _forecastTable(projections, colorScheme),
@@ -665,6 +762,8 @@ class _TrendsScreenState extends State<TrendsScreen> {
     final maxY = values.fold<double>(1, (maximum, value) {
       return math.max(maximum, value);
     });
+    final interval = (maxY / 4).ceilToDouble();
+    final chartMaxY = (maxY / interval).ceilToDouble() * interval;
     final points = [...history, ...projections];
     final maxX = math.max(1, points.length - 1).toDouble();
 
@@ -673,9 +772,10 @@ class _TrendsScreenState extends State<TrendsScreen> {
         minX: 0,
         maxX: maxX,
         minY: 0,
-        maxY: maxY * 1.2,
+        maxY: chartMaxY,
         gridData: FlGridData(
           drawVerticalLine: false,
+          horizontalInterval: interval,
           getDrawingHorizontalLine: (_) => FlLine(
             color: colorScheme.outlineVariant.withValues(alpha: 0.55),
             strokeWidth: 1,
@@ -692,12 +792,16 @@ class _TrendsScreenState extends State<TrendsScreen> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 34,
-              getTitlesWidget: (value, _) => Text(
-                value.toInt().toString(),
-                style: TextStyle(
-                  color: colorScheme.onSurfaceVariant,
-                  fontSize: 10,
+              reservedSize: 45,
+              interval: interval,
+              getTitlesWidget: (value, _) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Text(
+                  value.toInt().toString(),
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
                 ),
               ),
             ),
@@ -816,62 +920,92 @@ class _TrendsScreenState extends State<TrendsScreen> {
                 ),
               )
             else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _recommendations.length,
-                itemBuilder: (context, index) {
-                  final recommendation = _recommendations[index];
-                  final type = recommendation['type']?.toString() ?? '';
-                  final accent = _recommendationColor(type, colorScheme);
-                  return Container(
-                    margin: EdgeInsets.only(
-                      bottom: index == _recommendations.length - 1 ? 0 : 10,
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.06),
-                      border: Border.all(color: accent.withValues(alpha: 0.55)),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          _recommendationIcon(type),
-                          color: accent,
-                          size: 19,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                recommendation['title']?.toString() ??
-                                    'Recommendation',
-                                style: TextStyle(
-                                  color: colorScheme.onSurface,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                recommendation['description']?.toString() ?? '',
-                                style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  height: 1.4,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+              SizedBox(
+                height: 400,
+                child: Scrollbar(
+                  child: ListView.builder(
+                    itemCount:
+                        math.min(
+                          _visibleRecommendations,
+                          _recommendations.length,
+                        ) +
+                        (_visibleRecommendations < _recommendations.length
+                            ? 1
+                            : 0),
+                    itemBuilder: (context, index) {
+                      final visibleCount = math.min(
+                        _visibleRecommendations,
+                        _recommendations.length,
+                      );
+                      if (index == visibleCount) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 8),
+                          child: TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _visibleRecommendations += 5;
+                              });
+                            },
+                            child: const Text('Load More'),
                           ),
+                        );
+                      }
+                      final recommendation = _recommendations[index];
+                      final type = recommendation['type']?.toString() ?? '';
+                      final accent = _recommendationColor(type, colorScheme);
+                      return Container(
+                        margin: EdgeInsets.only(
+                          bottom: index == visibleCount - 1 ? 0 : 10,
                         ),
-                      ],
-                    ),
-                  );
-                },
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.06),
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.55),
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              _recommendationIcon(type),
+                              color: accent,
+                              size: 19,
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    recommendation['title']?.toString() ??
+                                        'Recommendation',
+                                    style: TextStyle(
+                                      color: colorScheme.onSurface,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    recommendation['description']?.toString() ??
+                                        '',
+                                    style: TextStyle(
+                                      color: colorScheme.onSurfaceVariant,
+                                      height: 1.4,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
           ],
         ),
@@ -959,7 +1093,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
             const SizedBox(height: 10),
             _reportDetail(
               'Unit Price',
-              product == null ? '—' : '₱${price.toStringAsFixed(2)}',
+              product == null ? '—' : '$_currency${price.toStringAsFixed(2)}',
             ),
             const SizedBox(height: 14),
             Container(
@@ -1038,12 +1172,17 @@ class _TrendsScreenState extends State<TrendsScreen> {
     final price = selectedProduct == null
         ? 0.0
         : _numberValue(selectedProduct['price']);
-    final projections = (_trend?['projections'] as List? ?? const [])
-        .whereType<Map>()
-        .toList();
-    final revenue = projections.isEmpty || price <= 0
-        ? '—'
-        : '₱${(projections.fold<double>(0, (total, point) => total + _numberValue(point['predicted_demand'])) * price).toStringAsFixed(0)}';
+    final projections = ApiService.parseListResponse(
+      _trend?['projections'] ?? const [],
+      endpoint: 'Forecast projections',
+    );
+    final projectedUnits = projections.fold<double>(
+      0,
+      (total, point) => total + _numberValue(point['predicted_demand']),
+    );
+    final revenuePrice = price > 0 ? price : 1.0;
+    final revenue =
+        '$_currency${(projectedUnits * revenuePrice).toStringAsFixed(0)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1133,6 +1272,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
+                    key: ValueKey('forecast-kpi-$title'),
                     value,
                     style: TextStyle(
                       color: colorScheme.onSurface,

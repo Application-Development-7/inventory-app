@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../widgets/skeleton_loader.dart';
 import 'product_form_screen.dart';
 import 'stock_transaction_screen.dart';
 
@@ -14,9 +16,13 @@ class ProductsScreen extends StatefulWidget {
 }
 
 class _ProductsScreenState extends State<ProductsScreen> {
+  String get _currency =>
+      Provider.of<AuthService?>(context, listen: true)?.currency ?? '₱';
+
   static const _allCategories = 'All categories';
   static const _sortOptions = [
     'Default',
+    'Alphabetical: A-Z',
     'Stock: High to Low',
     'Stock: Low to High',
     'Price: High to Low',
@@ -41,7 +47,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
     try {
       final data = await context.read<ApiService>().get('/products');
       if (mounted) {
-        final products = (data as List).cast<Map<String, dynamic>>();
+        final products = ApiService.parseListResponse(
+          data,
+          endpoint: 'Products',
+        );
         final categories = products.map(_categoryName).toSet();
         setState(() {
           _products = products;
@@ -82,7 +91,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
     if (ok == true) {
       try {
         await api.delete('/products/$id');
-        if (mounted) _load();
+        if (mounted) {
+          _load();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Product deleted'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)
@@ -127,6 +145,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }).toList();
 
     switch (_selectedSort) {
+      case 'Alphabetical: A-Z':
+        products.sort(
+          (a, b) => (a['name']?.toString() ?? '').toLowerCase().compareTo(
+            (b['name']?.toString() ?? '').toLowerCase(),
+          ),
+        );
       case 'Stock: High to Low':
         products.sort(
           (a, b) =>
@@ -200,7 +224,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   const SizedBox(height: 18),
                   Expanded(
                     child: _loading
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const SkeletonLoader.products()
                         : filtered.isEmpty
                         ? _emptyProductsState(colorScheme)
                         : _isGridView
@@ -547,7 +571,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             Expanded(
               flex: 2,
               child: Text(
-                '₱${_doubleValue(product['price']).toStringAsFixed(2)}',
+                '$_currency${_doubleValue(product['price']).toStringAsFixed(2)}',
                 style: TextStyle(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
@@ -572,13 +596,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
           );
           if (mounted) _load();
         } else if (value == 'in' || value == 'out') {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StockTransactionScreen(
-                product: product,
-                type: value == 'in' ? 'IN' : 'OUT',
-              ),
+          await showDialog<void>(
+            context: context,
+            builder: (_) => StockTransactionScreen(
+              product: product,
+              type: value == 'in' ? 'IN' : 'OUT',
             ),
           );
           if (mounted) _load();
@@ -736,13 +758,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       );
                       _load();
                     } else if (value == 'in' || value == 'out') {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => StockTransactionScreen(
-                            product: product,
-                            type: value == 'in' ? 'IN' : 'OUT',
-                          ),
+                      await showDialog<void>(
+                        context: context,
+                        builder: (_) => StockTransactionScreen(
+                          product: product,
+                          type: value == 'in' ? 'IN' : 'OUT',
                         ),
                       );
                       _load();
@@ -781,7 +801,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   Expanded(
                     child: _productMetric(
                       'PRICE',
-                      '₱${price.toStringAsFixed(2)}',
+                      '$_currency${price.toStringAsFixed(2)}',
                       colorScheme.onSurface,
                     ),
                   ),
@@ -807,7 +827,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   Expanded(
                     child: _productMetric(
                       'PRICE',
-                      '₱${price.toStringAsFixed(2)}',
+                      '$_currency${price.toStringAsFixed(2)}',
                       colorScheme.onSurface,
                     ),
                   ),

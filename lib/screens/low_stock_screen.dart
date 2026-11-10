@@ -34,7 +34,10 @@ class _LowStockScreenState extends State<LowStockScreen> {
     try {
       final data = await context.read<ApiService>().get('/products/low-stock');
       if (mounted) {
-        final items = (data as List).cast<Map<String, dynamic>>();
+        final items = ApiService.parseListResponse(
+          data,
+          endpoint: 'Low-stock products',
+        );
         final categories = items.map(_categoryName).toSet();
         setState(() {
           _items = items;
@@ -572,13 +575,11 @@ class _LowStockScreenState extends State<LowStockScreen> {
           );
           if (mounted) _load();
         } else if (value == 'in' || value == 'out') {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StockTransactionScreen(
-                product: item,
-                type: value == 'in' ? 'IN' : 'OUT',
-              ),
+          await showDialog<void>(
+            context: context,
+            builder: (_) => StockTransactionScreen(
+              product: item,
+              type: value == 'in' ? 'IN' : 'OUT',
             ),
           );
           if (mounted) _load();

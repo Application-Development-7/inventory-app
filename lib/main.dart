@@ -183,7 +183,9 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider(create: (_) => ApiService()),
-        ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(
+          create: (context) => AuthService(api: context.read<ApiService>()),
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: Consumer2<AuthService, ThemeProvider>(

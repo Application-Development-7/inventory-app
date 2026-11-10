@@ -11,6 +11,7 @@ class ProductFormScreen extends StatefulWidget {
 }
 
 class _ProductFormScreenState extends State<ProductFormScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _sku = TextEditingController();
   final _price = TextEditingController(text: '0');
@@ -20,6 +21,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   List<Map<String, dynamic>> _categories = [];
   bool _saving = false;
   String? _categoryError;
+  String? _saveError;
 
   @override
   void initState() {
@@ -51,7 +53,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       final data = await context.read<ApiService>().get('/categories');
       if (mounted) {
         setState(
-          () => _categories = (data as List).cast<Map<String, dynamic>>(),
+          () => _categories = ApiService.parseListResponse(
+            data,
+            endpoint: 'Categories',
+          ),
         );
       }
     } catch (e) {
@@ -65,30 +70,74 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
+    _saveError = null;
     try {
       final api = context.read<ApiService>();
       final body = {
         'name': _name.text.trim(),
         'category_id': _categoryId,
         'sku': _sku.text.trim(),
-        'price': double.tryParse(_price.text) ?? 0,
-        'quantity': int.tryParse(_qty.text) ?? 0,
-        'min_stock': int.tryParse(_min.text) ?? 5,
+        'price': double.parse(_price.text.trim()),
+        'quantity': int.parse(_qty.text.trim()),
+        'min_stock': int.parse(_min.text.trim()),
       };
       if (widget.product == null) {
         await api.post('/products', body);
       } else {
         await api.put('/products/${widget.product!['id']}', body);
       }
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.pop(context);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Product saved successfully!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        setState(() {
+          _saveError = 'Unable to save product. Please try again.';
+        });
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _submit() {
+    if (_formKey.currentState?.validate() != true) return;
+    _save();
+  }
+
+  String? _validateRequired(String? value, String label) {
+    if (value == null || value.trim().isEmpty) {
+      return '$label cannot be empty';
+    }
+    return null;
+  }
+
+  String? _validateNonNegativeInteger(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (!RegExp(r'^\d+$').hasMatch(trimmed) || int.tryParse(trimmed) == null) {
+      return 'Please enter a valid number';
+    }
+    return null;
+  }
+
+  String? _validatePrice(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (!RegExp(r'^(?:\d+(?:\.\d*)?|\.\d+)$').hasMatch(trimmed)) {
+      return 'Please enter a valid price';
+    }
+    final price = double.tryParse(trimmed);
+    if (price == null || !price.isFinite || price < 0) {
+      return 'Please enter a valid price';
+    }
+    return null;
   }
 
   @override
@@ -171,107 +220,133 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 const SizedBox(height: 22),
                 Flexible(
                   child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: _name,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
-                            labelText: 'Product name',
-                            hintText: 'e.g. Arc Wireless Mouse',
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            key: const ValueKey('product-name'),
+                            controller: _name,
+                            textCapitalization: TextCapitalization.words,
+                            validator: (value) =>
+                                _validateRequired(value, 'Product name'),
+                            onChanged: (_) => setState(() => _saveError = null),
+                            decoration: const InputDecoration(
+                              labelText: 'Product name',
+                              hintText: 'e.g. Arc Wireless Mouse',
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _sku,
-                                decoration: const InputDecoration(
-                                  labelText: 'SKU',
-                                  hintText: 'e.g. AW-2401',
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  key: const ValueKey('product-sku'),
+                                  controller: _sku,
+                                  validator: (value) =>
+                                      _validateRequired(value, 'SKU'),
+                                  onChanged: (_) =>
+                                      setState(() => _saveError = null),
+                                  decoration: const InputDecoration(
+                                    labelText: 'SKU',
+                                    hintText: 'e.g. AW-2401',
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: DropdownButtonFormField<int>(
-                                initialValue: _categoryId,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                  labelText: 'Category',
-                                ),
-                                items: _categories
-                                    .map(
-                                      (category) => DropdownMenuItem<int>(
-                                        value: category['id'],
-                                        child: Text(
-                                          category['name'],
-                                          overflow: TextOverflow.ellipsis,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: _categoryId,
+                                  isExpanded: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Category',
+                                  ),
+                                  items: _categories
+                                      .map(
+                                        (category) => DropdownMenuItem<int>(
+                                          value: category['id'],
+                                          child: Text(
+                                            category['name'],
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) =>
-                                    setState(() => _categoryId = value),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) =>
+                                      setState(() => _categoryId = value),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_categoryError != null) ...[
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: _loadCategories,
+                                icon: const Icon(
+                                  Icons.refresh_rounded,
+                                  size: 17,
+                                ),
+                                label: const Text('Retry loading categories'),
                               ),
                             ),
                           ],
-                        ),
-                        if (_categoryError != null) ...[
-                          const SizedBox(height: 6),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _loadCategories,
-                              icon: const Icon(Icons.refresh_rounded, size: 17),
-                              label: const Text('Retry loading categories'),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  key: const ValueKey('product-quantity'),
+                                  controller: _qty,
+                                  keyboardType: TextInputType.number,
+                                  enabled: widget.product == null,
+                                  validator: _validateNonNegativeInteger,
+                                  onChanged: (_) =>
+                                      setState(() => _saveError = null),
+                                  decoration: InputDecoration(
+                                    labelText: 'Initial stock',
+                                    hintText: '0',
+                                    helperText: widget.product == null
+                                        ? null
+                                        : 'Managed with stock movements',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextFormField(
+                                  key: const ValueKey('product-price'),
+                                  controller: _price,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  validator: _validatePrice,
+                                  onChanged: (_) =>
+                                      setState(() => _saveError = null),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Unit price',
+                                    hintText: '0.00',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            key: const ValueKey('product-min-stock'),
+                            controller: _min,
+                            keyboardType: TextInputType.number,
+                            validator: _validateNonNegativeInteger,
+                            onChanged: (_) => setState(() => _saveError = null),
+                            decoration: const InputDecoration(
+                              labelText: 'Minimum stock',
+                              hintText: '5',
                             ),
                           ),
                         ],
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _qty,
-                                keyboardType: TextInputType.number,
-                                enabled: widget.product == null,
-                                decoration: InputDecoration(
-                                  labelText: 'Initial stock',
-                                  hintText: '0',
-                                  helperText: widget.product == null
-                                      ? null
-                                      : 'Managed with stock movements',
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextField(
-                                controller: _price,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Unit price',
-                                  hintText: '0.00',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        TextField(
-                          controller: _min,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Minimum stock',
-                            hintText: '5',
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -285,7 +360,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     ),
                     const SizedBox(width: 10),
                     ElevatedButton.icon(
-                      onPressed: _saving ? null : _save,
+                      onPressed: _saving ? null : _submit,
                       icon: _saving
                           ? const SizedBox(
                               width: 18,
@@ -299,6 +374,16 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     ),
                   ],
                 ),
+                if (_saveError != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      _saveError!,
+                      style: TextStyle(color: colorScheme.error),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'register_screen.dart';
 import '../services/auth_service.dart';
 import '../widgets/auth_branding_panel.dart';
+import '../widgets/legal_document_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -32,7 +33,11 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      await context.read<AuthService>().login(_user.text.trim(), _pass.text);
+      await context.read<AuthService>().login(
+        _user.text.trim(),
+        _pass.text,
+        rememberMe: _rememberMe,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString().replaceAll('Exception: ', ''));
@@ -218,28 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 360) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildRememberMe(theme, colorScheme),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _buildForgotPasswordButton(),
-                  ),
-                ],
-              );
-            }
-            return Row(
-              children: [
-                Expanded(child: _buildRememberMe(theme, colorScheme)),
-                _buildForgotPasswordButton(),
-              ],
-            );
-          },
-        ),
+        _buildRememberMe(theme, colorScheme),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Container(
@@ -283,6 +267,33 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 16),
         Center(
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'By signing in, you agree to our ',
+                style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
+              ),
+              _buildLegalLink(
+                'Terms of Service',
+                LegalDocument.termsOfService,
+                theme,
+              ),
+              Text(
+                ' and ',
+                style: theme.textTheme.bodySmall?.copyWith(color: mutedColor),
+              ),
+              _buildLegalLink(
+                'Privacy Policy',
+                LegalDocument.privacyPolicy,
+                theme,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Center(
           child: TextButton(
             onPressed: _loading ? null : _openRegister,
             child: const Text('Create an account'),
@@ -321,16 +332,28 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildForgotPasswordButton() {
+  Widget _buildLegalLink(
+    String label,
+    LegalDocument document,
+    ThemeData theme,
+  ) {
     return TextButton(
-      onPressed: () {},
+      onPressed: _loading
+          ? null
+          : () => LegalDocumentDialog.show(context, document),
       style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: EdgeInsets.zero,
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
       ),
-      child: const Text('Forgot password?'),
+      child: Text(
+        label,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.primary,
+          decoration: TextDecoration.underline,
+        ),
+      ),
     );
   }
 }

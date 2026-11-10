@@ -12,7 +12,7 @@ A modern, full-stack Inventory Management System designed with a SaaS-style dash
 *   **Privacy Toggle:** Hide sensitive data like total Inventory Value with a single click.
 *   **Dark Mode:** Fully integrated light and dark themes.
 *   **Philippine Peso (₱) Support:** All prices and values are formatted for the local market.
-*   **Secure Authentication:** JWT-based login system with route protection.
+*   **Secure Authentication:** JWT-based login system with route protection, editable profile details, and password updates.
 
 ## 🛠️ Tech Stack
 
@@ -48,8 +48,8 @@ Make sure you have installed:
 ### 1. Database Setup
 1. Open **MySQL Workbench** and connect to your local instance.
 2. Create a new database named `inventory_db`.
-3. Run the SQL scripts provided in the `/database` folder (or the root of the repo) to create the tables, stored procedures, and seed data. 
-   *(Ensure you run the scripts for `sp_get_dashboard_summary`, `sp_get_all_products`, `sp_get_top_products_by_month`, etc.)*
+3. Run the SQL scripts provided in the `/database` folder (or the root of the repo) to create the tables, stored procedures, and seed data.
+   *(Run `../inventory-backend/database/user_data_isolation.sql` to add user ownership columns and recreate the user-scoped product and stock procedures. Run `audit_logs.sql` to create the user-scoped dashboard procedures. Run `user_display_name.sql` once before `user_settings.sql` for account settings.)*
 
 ### 2. Backend Setup
 1. Open a terminal and navigate to the backend folder:
