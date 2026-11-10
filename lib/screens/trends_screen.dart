@@ -638,6 +638,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
                 height: 250,
                 child: _forecastLineChart(history, projections, colorScheme),
               ),
+            if (isReady) const SizedBox(height: 6),
             if (isReady && _trend?['chart_is_fallback'] == true) ...[
               const SizedBox(height: 8),
               Text(
@@ -809,8 +810,8 @@ class _TrendsScreenState extends State<TrendsScreen> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 34,
-              interval: 1,
+              reservedSize: 40,
+              interval: 2,
               getTitlesWidget: (value, _) {
                 final index = value.toInt();
                 if (index < 0 || index >= points.length) {

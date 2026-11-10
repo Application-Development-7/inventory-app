@@ -26,12 +26,21 @@ void main() {
     expect(find.text('Tea'), findsOneWidget);
     expect(find.text('Soap'), findsOneWidget);
     expect(find.text('PRODUCT'), findsOneWidget);
-    expect(find.text('CURRENT STOCK'), findsOneWidget);
-    expect(find.text('MINIMUM'), findsOneWidget);
-    expect(find.text('Low stock'), findsNWidgets(2));
-    expect(find.text('Out of stock'), findsOneWidget);
+    expect(find.text('CATEGORY'), findsNothing);
+    expect(find.text('STOCK'), findsOneWidget);
+    expect(find.text('MIN'), findsOneWidget);
+    expect(find.text('Low'), findsNWidgets(2));
+    expect(find.text('Out'), findsOneWidget);
     expect(find.byType(PopupMenuButton<String>), findsNWidgets(3));
     expect(find.byType(SliverList), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is SingleChildScrollView &&
+            widget.scrollDirection == Axis.horizontal,
+      ),
+      findsNothing,
+    );
 
     await tester.enterText(find.byType(TextField), 'COF-001');
     await tester.pumpAndSettle();
@@ -62,6 +71,70 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'paginates low-stock rows ten at a time without horizontal scroll',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        Provider<ApiService>.value(
+          value: _PagedLowStockApiService(),
+          child: const MaterialApp(home: Scaffold(body: LowStockScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Low-stock product 1'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Low-stock product 10'),
+        120,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('Low-stock product 10'), findsOneWidget);
+      expect(find.text('Low-stock product 11'), findsNothing);
+      expect(find.text('Showing 10 of 12'), findsOneWidget);
+      expect(find.text('1/2'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(
+                of: find.byTooltip('Previous page'),
+                matching: find.byType(IconButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byTooltip('Next page'));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Low-stock product 11'),
+        120,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('Low-stock product 11'), findsOneWidget);
+      expect(find.text('Showing 2 of 12'), findsOneWidget);
+      expect(find.text('2/2'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(
+                of: find.byTooltip('Next page'),
+                matching: find.byType(IconButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('shows an all-stocked-up empty state', (
     WidgetTester tester,
   ) async {
@@ -78,6 +151,26 @@ void main() {
     expect(api.requestedPaths, ['/products/low-stock']);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _PagedLowStockApiService extends ApiService {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path != '/products/low-stock') {
+      throw StateError('Unexpected API request: $path');
+    }
+    return List.generate(
+      12,
+      (index) => {
+        'id': index + 1,
+        'name': 'Low-stock product ${index + 1}',
+        'sku': 'LOW-${index + 1}',
+        'category_name': 'Category',
+        'quantity': index % 2,
+        'min_stock': 5,
+      },
+    );
+  }
 }
 
 class _LowStockApiService extends ApiService {

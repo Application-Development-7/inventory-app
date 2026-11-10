@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -35,6 +33,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
   String _selectedCategory = _allCategories;
   String _selectedSort = 'Default';
   bool _isGridView = false;
+  int _currentPage = 1;
+  final int _itemsPerPage = 10;
 
   @override
   void initState() {
@@ -54,6 +54,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         final categories = products.map(_categoryName).toSet();
         setState(() {
           _products = products;
+          _currentPage = 1;
           if (!categories.contains(_selectedCategory)) {
             _selectedCategory = _allCategories;
           }
@@ -132,7 +133,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  List<Map<String, dynamic>> get _visibleProducts {
+  List<Map<String, dynamic>> get _displayedProducts {
     final products = _products.where((product) {
       final name = product['name']?.toString().toLowerCase() ?? '';
       final sku = product['sku']?.toString().toLowerCase() ?? '';
@@ -179,7 +180,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final filtered = _visibleProducts;
+    final filtered = _displayedProducts;
     final categories = [_allCategories, ..._categories];
 
     return Scaffold(
@@ -260,7 +261,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
             hintText: 'Search products or SKU...',
             isDense: true,
           ),
-          onChanged: (value) => setState(() => _search = value),
+          onChanged: (value) => setState(() {
+            _search = value;
+            _currentPage = 1;
+          }),
         );
         final categoryDropdown = DropdownButtonFormField<String>(
           initialValue: categories.contains(_selectedCategory)
@@ -281,7 +285,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
               .toList(),
           onChanged: (category) {
             if (category != null) {
-              setState(() => _selectedCategory = category);
+              setState(() {
+                _selectedCategory = category;
+                _currentPage = 1;
+              });
             }
           },
         );
@@ -301,7 +308,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
               )
               .toList(),
           onChanged: (sort) {
-            if (sort != null) setState(() => _selectedSort = sort);
+            if (sort != null) {
+              setState(() {
+                _selectedSort = sort;
+                _currentPage = 1;
+              });
+            }
           },
         );
         final toggle = IconButton.outlined(
@@ -316,6 +328,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
           icon: const Icon(Icons.add_rounded),
           label: const Text('Add Product'),
         );
+        final compactAddButton = IconButton.filled(
+          tooltip: 'Add Product',
+          onPressed: _openAddProduct,
+          icon: const Icon(Icons.add_rounded),
+        );
 
         if (constraints.maxWidth >= 940) {
           return Row(
@@ -329,6 +346,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
               toggle,
               const SizedBox(width: 8),
               addButton,
+            ],
+          );
+        }
+
+        if (constraints.maxWidth < 600) {
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: search),
+                  const SizedBox(width: 6),
+                  toggle,
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: categoryDropdown),
+                  const SizedBox(width: 6),
+                  Expanded(child: sortDropdown),
+                  const SizedBox(width: 4),
+                  compactAddButton,
+                ],
+              ),
             ],
           );
         }
@@ -394,42 +435,45 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Widget _buildProductTable(List<Map<String, dynamic>> products) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final mobile = constraints.maxWidth < 600;
         final compact = constraints.maxWidth < 760;
-        final tableWidth = compact
-            ? math.max(620.0, constraints.maxWidth).toDouble()
-            : constraints.maxWidth;
+        final totalPages = (products.length / _itemsPerPage).ceil();
+        final startIndex = (_currentPage - 1) * _itemsPerPage;
+        final pageProducts = products
+            .skip(startIndex)
+            .take(_itemsPerPage)
+            .toList();
         return RefreshIndicator(
           onRefresh: _load,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: tableWidth,
-              child: Column(
-                children: [
-                  _tableHeader(compact),
-                  Expanded(
-                    child: ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: products.length,
-                      itemBuilder: (context, index) =>
-                          _productTableRow(products[index], compact),
-                    ),
-                  ),
-                  _tableFooter(products.length),
-                ],
+          child: Column(
+            children: [
+              _tableHeader(compact, mobile),
+              Expanded(
+                child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: pageProducts.length,
+                  itemBuilder: (context, index) =>
+                      _productTableRow(pageProducts[index], compact, mobile),
+                ),
               ),
-            ),
+              _tableFooter(
+                pageProducts.length,
+                products.length,
+                totalPages,
+                mobile,
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _tableHeader(bool compact) {
+  Widget _tableHeader(bool compact, bool mobile) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: EdgeInsets.symmetric(horizontal: mobile ? 8 : 14),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         border: Border(
@@ -442,17 +486,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
           const Expanded(flex: 5, child: _TableHeaderLabel('PRODUCT')),
           if (!compact)
             const Expanded(flex: 2, child: _TableHeaderLabel('CATEGORY')),
-          const Expanded(flex: 2, child: _TableHeaderLabel('STOCK')),
-          const Expanded(flex: 2, child: _TableHeaderLabel('STATUS')),
+          if (mobile)
+            const SizedBox(width: 44, child: _TableHeaderLabel('STOCK'))
+          else
+            const Expanded(flex: 2, child: _TableHeaderLabel('STOCK')),
+          if (mobile)
+            const SizedBox(width: 66, child: _TableHeaderLabel('STATUS'))
+          else
+            const Expanded(flex: 2, child: _TableHeaderLabel('STATUS')),
           if (!compact)
             const Expanded(flex: 2, child: _TableHeaderLabel('PRICE')),
-          const SizedBox(width: 44),
+          SizedBox(width: mobile ? 36 : 44),
         ],
       ),
     );
   }
 
-  Widget _productTableRow(Map<String, dynamic> product, bool compact) {
+  Widget _productTableRow(
+    Map<String, dynamic> product,
+    bool compact,
+    bool mobile,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     final quantity = _intValue(product['quantity']);
     final minimum = _intValue(product['min_stock']);
@@ -466,11 +520,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
         : status == 'Low stock'
         ? colorScheme.tertiary
         : colorScheme.primary;
+    final mobileStatus = status == 'Out of stock'
+        ? 'Out'
+        : status == 'Low stock'
+        ? 'Low'
+        : 'In';
     final sku = product['sku']?.toString().trim();
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 76),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: BoxConstraints(minHeight: mobile ? 56 : 76),
+      padding: EdgeInsets.symmetric(
+        horizontal: mobile ? 8 : 14,
+        vertical: mobile ? 4 : 10,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
@@ -482,8 +544,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: mobile ? 28 : 40,
+                  height: mobile ? 28 : 40,
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(11),
@@ -491,10 +553,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   child: Icon(
                     Icons.inventory_2_outlined,
                     color: colorScheme.onPrimaryContainer,
-                    size: 20,
+                    size: mobile ? 18 : 20,
                   ),
                 ),
-                const SizedBox(width: 11),
+                SizedBox(width: mobile ? 6 : 11),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -509,7 +571,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      SizedBox(height: mobile ? 1 : 3),
                       Text(
                         sku == null || sku.isEmpty ? 'SKU not set' : sku,
                         maxLines: 1,
@@ -535,38 +597,83 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
             ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              '$quantity units',
-              style: TextStyle(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
+          if (mobile)
+            SizedBox(
+              width: 44,
+              child: Text(
+                quantity.toString(),
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$quantity units',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
+          if (mobile)
+            SizedBox(
+              width: 66,
+              child: Tooltip(
+                message: status,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      mobileStatus,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(
-                  status,
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            Expanded(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           if (!compact)
             Expanded(
               flex: 2,
@@ -578,7 +685,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ),
               ),
             ),
-          SizedBox(width: 44, child: _productActions(product)),
+          SizedBox(width: mobile ? 36 : 44, child: _productActions(product)),
         ],
       ),
     );
@@ -623,10 +730,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-  Widget _tableFooter(int displayedCount) {
+  Widget _tableFooter(
+    int displayedCount,
+    int totalCount,
+    int totalPages,
+    bool mobile,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: mobile ? 6 : 12, vertical: 2),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -638,20 +750,37 @@ class _ProductsScreenState extends State<ProductsScreen> {
         children: [
           Expanded(
             child: Text(
-              'Showing $displayedCount of ${_products.length} products',
+              'Showing $displayedCount of $totalCount products',
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
-                fontSize: 12,
+                fontSize: mobile ? 10 : 12,
               ),
             ),
           ),
-          TextButton(onPressed: null, child: const Text('Previous')),
-          const SizedBox(width: 4),
-          FilledButton.tonal(onPressed: null, child: const Text('1')),
-          const SizedBox(width: 4),
-          TextButton(onPressed: null, child: const Text('2')),
-          const SizedBox(width: 4),
-          TextButton(onPressed: null, child: const Text('Next')),
+          IconButton(
+            tooltip: 'Previous page',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            padding: EdgeInsets.zero,
+            onPressed: _currentPage > 1
+                ? () => setState(() => _currentPage--)
+                : null,
+            icon: const Icon(Icons.chevron_left_rounded, size: 20),
+          ),
+          Text(
+            '$_currentPage/$totalPages',
+            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11),
+          ),
+          IconButton(
+            tooltip: 'Next page',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            padding: EdgeInsets.zero,
+            onPressed: _currentPage < totalPages
+                ? () => setState(() => _currentPage++)
+                : null,
+            icon: const Icon(Icons.chevron_right_rounded, size: 20),
+          ),
         ],
       ),
     );

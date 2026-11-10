@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +20,8 @@ class _LowStockScreenState extends State<LowStockScreen> {
   String _search = '';
   String _selectedCategory = _allCategories;
   bool _isGridView = false;
+  int _currentPage = 1;
+  final int _itemsPerPage = 10;
 
   @override
   void initState() {
@@ -41,6 +41,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
         final categories = items.map(_categoryName).toSet();
         setState(() {
           _items = items;
+          _currentPage = 1;
           if (!categories.contains(_selectedCategory)) {
             _selectedCategory = _allCategories;
           }
@@ -199,7 +200,10 @@ class _LowStockScreenState extends State<LowStockScreen> {
             hintText: 'Search low stock products...',
             isDense: true,
           ),
-          onChanged: (value) => setState(() => _search = value),
+          onChanged: (value) => setState(() {
+            _search = value;
+            _currentPage = 1;
+          }),
         );
         final categoryDropdown = DropdownButtonFormField<String>(
           initialValue: categories.contains(_selectedCategory)
@@ -220,11 +224,14 @@ class _LowStockScreenState extends State<LowStockScreen> {
               .toList(),
           onChanged: (category) {
             if (category != null) {
-              setState(() => _selectedCategory = category);
+              setState(() {
+                _selectedCategory = category;
+                _currentPage = 1;
+              });
             }
           },
         );
-        final toggle = IconButton(
+        final toggle = IconButton.outlined(
           tooltip: _isGridView ? 'Show as table' : 'Show as grid',
           onPressed: () => setState(() => _isGridView = !_isGridView),
           icon: Icon(
@@ -240,6 +247,22 @@ class _LowStockScreenState extends State<LowStockScreen> {
               SizedBox(width: 210, child: categoryDropdown),
               const SizedBox(width: 8),
               toggle,
+            ],
+          );
+        }
+
+        if (constraints.maxWidth < 600) {
+          return Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: search),
+                  const SizedBox(width: 6),
+                  toggle,
+                ],
+              ),
+              const SizedBox(height: 8),
+              categoryDropdown,
             ],
           );
         }
@@ -349,38 +372,41 @@ class _LowStockScreenState extends State<LowStockScreen> {
   Widget _buildTable(List<Map<String, dynamic>> items) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tableWidth = math.max(760.0, constraints.maxWidth).toDouble();
+        final mobile = constraints.maxWidth < 600;
+        final totalPages = (items.length / _itemsPerPage).ceil();
+        final startIndex = (_currentPage - 1) * _itemsPerPage;
+        final pageItems = items.skip(startIndex).take(_itemsPerPage).toList();
         return RefreshIndicator(
           onRefresh: _load,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: tableWidth,
-              child: Column(
-                children: [
-                  _tableHeader(),
-                  Expanded(
-                    child: ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: items.length,
-                      itemBuilder: (context, index) => _tableRow(items[index]),
-                    ),
-                  ),
-                  _tableFooter(items.length),
-                ],
+          child: Column(
+            children: [
+              _tableHeader(mobile),
+              Expanded(
+                child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: pageItems.length,
+                  itemBuilder: (context, index) =>
+                      _tableRow(pageItems[index], mobile),
+                ),
               ),
-            ),
+              _tableFooter(
+                pageItems.length,
+                items.length,
+                totalPages,
+                mobile,
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _tableHeader() {
+  Widget _tableHeader(bool mobile) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: EdgeInsets.symmetric(horizontal: mobile ? 8 : 14),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         border: Border(
@@ -388,29 +414,48 @@ class _LowStockScreenState extends State<LowStockScreen> {
           bottom: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Expanded(flex: 4, child: _TableHeaderLabel('PRODUCT')),
-          Expanded(flex: 2, child: _TableHeaderLabel('CATEGORY')),
-          Expanded(flex: 2, child: _TableHeaderLabel('CURRENT STOCK')),
-          Expanded(flex: 2, child: _TableHeaderLabel('MINIMUM')),
-          Expanded(flex: 2, child: _TableHeaderLabel('STATUS')),
-          SizedBox(width: 44),
+          const Expanded(flex: 4, child: _TableHeaderLabel('PRODUCT')),
+          if (!mobile)
+            const Expanded(flex: 2, child: _TableHeaderLabel('CATEGORY')),
+          if (mobile)
+            const SizedBox(
+              width: 48,
+              child: _TableHeaderLabel('STOCK'),
+            )
+          else
+            const Expanded(flex: 2, child: _TableHeaderLabel('CURRENT STOCK')),
+          if (mobile)
+            const SizedBox(width: 44, child: _TableHeaderLabel('MIN'))
+          else
+            const Expanded(flex: 2, child: _TableHeaderLabel('MINIMUM')),
+          if (mobile)
+            const SizedBox(width: 50, child: _TableHeaderLabel('STATUS'))
+          else
+            const Expanded(flex: 2, child: _TableHeaderLabel('STATUS')),
+          SizedBox(width: mobile ? 36 : 44),
         ],
       ),
     );
   }
 
-  Widget _tableRow(Map<String, dynamic> item) {
+  Widget _tableRow(Map<String, dynamic> item, bool mobile) {
     final colorScheme = Theme.of(context).colorScheme;
     final quantity = _intValue(item['quantity']);
+    final minimum = _intValue(item['min_stock']);
     final isOutOfStock = quantity <= 0;
     final statusColor = isOutOfStock ? colorScheme.error : colorScheme.tertiary;
+    final status = isOutOfStock ? 'Out of stock' : 'Low stock';
+    final mobileStatus = isOutOfStock ? 'Out' : 'Low';
     final sku = item['sku']?.toString().trim();
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 76),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: BoxConstraints(minHeight: mobile ? 56 : 76),
+      padding: EdgeInsets.symmetric(
+        horizontal: mobile ? 8 : 14,
+        vertical: mobile ? 4 : 10,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
@@ -422,19 +467,19 @@ class _LowStockScreenState extends State<LowStockScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: mobile ? 28 : 40,
+                  height: mobile ? 28 : 40,
                   decoration: BoxDecoration(
-                    color: colorScheme.tertiaryContainer,
+                    color: colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(11),
                   ),
                   child: Icon(
                     Icons.warning_amber_rounded,
-                    color: colorScheme.onTertiaryContainer,
-                    size: 21,
+                    color: colorScheme.onErrorContainer,
+                    size: mobile ? 18 : 21,
                   ),
                 ),
-                const SizedBox(width: 11),
+                SizedBox(width: mobile ? 6 : 11),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -449,7 +494,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      SizedBox(height: mobile ? 1 : 3),
                       Text(
                         sku == null || sku.isEmpty ? 'SKU not set' : sku,
                         maxLines: 1,
@@ -465,64 +510,133 @@ class _LowStockScreenState extends State<LowStockScreen> {
               ],
             ),
           ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              _categoryName(item),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              '$quantity',
-              style: TextStyle(color: statusColor, fontWeight: FontWeight.w800),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              '${_intValue(item['min_stock'])}',
-              style: TextStyle(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
+          if (!mobile)
+            Expanded(
+              flex: 2,
+              child: Text(
+                _categoryName(item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
             ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
+          if (mobile)
+            SizedBox(
+              width: 48,
+              child: Text(
+                '$quantity',
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.w700,
                 ),
-                child: Text(
-                  isOutOfStock ? 'Out of stock' : 'Low stock',
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$quantity',
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          if (mobile)
+            SizedBox(
+              width: 44,
+              child: Text(
+                '$minimum',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$minimum',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          if (mobile)
+            SizedBox(
+              width: 50,
+              child: Tooltip(
+                message: status,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      mobileStatus,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
             ),
+          SizedBox(
+            width: mobile ? 36 : 44,
+            child: _itemActions(item),
           ),
-          SizedBox(width: 44, child: _itemActions(item)),
         ],
       ),
     );
   }
 
-  Widget _tableFooter(int displayedCount) {
+  Widget _tableFooter(
+    int displayedCount,
+    int totalCount,
+    int totalPages,
+    bool mobile,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: mobile ? 6 : 12, vertical: 2),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -534,29 +648,41 @@ class _LowStockScreenState extends State<LowStockScreen> {
         children: [
           Expanded(
             child: Text(
-              'Showing $displayedCount of ${_items.length} low-stock products',
+              'Showing $displayedCount of $totalCount',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
-                fontSize: 12,
+                fontSize: mobile ? 10 : 12,
               ),
             ),
           ),
-          const IconButton(
+          IconButton(
             tooltip: 'Previous page',
-            onPressed: null,
-            icon: Icon(Icons.chevron_left_rounded),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            padding: EdgeInsets.zero,
+            onPressed: _currentPage > 1
+                ? () => setState(() => _currentPage--)
+                : null,
+            icon: const Icon(Icons.chevron_left_rounded, size: 20),
           ),
           Text(
-            '1',
+            '$_currentPage/$totalPages',
             style: TextStyle(
               color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
+              fontSize: 11,
             ),
           ),
-          const IconButton(
+          IconButton(
             tooltip: 'Next page',
-            onPressed: null,
-            icon: Icon(Icons.chevron_right_rounded),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            padding: EdgeInsets.zero,
+            onPressed: _currentPage < totalPages
+                ? () => setState(() => _currentPage++)
+                : null,
+            icon: const Icon(Icons.chevron_right_rounded, size: 20),
           ),
         ],
       ),

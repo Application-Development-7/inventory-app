@@ -61,12 +61,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('All stocked up.'), findsOneWidget);
+    expect(find.text('Everything is stocked up.'), findsOneWidget);
     expect(find.text('Recent Activity'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('shows stacked dashboard with stat cards on mobile', (
+  testWidgets('shows dashboard content and stat cards on mobile', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -125,6 +125,22 @@ void main() {
     );
     expect(activityPosition.dx, lessThan(chartPosition.dx));
     expect((activityPosition.dy - chartPosition.dy).abs(), lessThan(40));
+    final kpiCardPositions =
+        [
+          'Total Products',
+          'Inventory Value',
+          'Units in Stock',
+          'Low Stock',
+        ].map(
+          (title) => tester.getTopLeft(
+            find.ancestor(
+              of: find.byKey(ValueKey('kpi-value-$title')),
+              matching: find.byType(Card),
+            ),
+          ),
+        );
+    final kpiRows = kpiCardPositions.map((position) => position.dy).toSet();
+    expect(kpiRows, hasLength(1));
     expect(attentionPosition.dy, greaterThan(activityPosition.dy));
     expect(topCategoriesPosition.dy, greaterThan(attentionPosition.dy));
   });
@@ -171,7 +187,7 @@ void main() {
     },
   );
 
-  testWidgets('stacks dashboard cards vertically on mobile', (
+  testWidgets('shows dashboard KPI cards in a two-column mobile grid', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -180,19 +196,35 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await _pumpDashboard(tester);
 
-    await _scrollUntilFound(
-      tester,
-      find.text('Items require your attention'),
-      -500,
+    final totalProducts = tester.getTopLeft(
+      find.ancestor(
+        of: find.byKey(const ValueKey('kpi-value-Total Products')),
+        matching: find.byType(Card),
+      ),
     );
-    await _scrollUntilFound(tester, find.text('Top Categories'), -500);
-    final attentionPosition = tester.getTopLeft(
-      find.text('Items require your attention'),
+    final inventoryValue = tester.getTopLeft(
+      find.ancestor(
+        of: find.byKey(const ValueKey('kpi-value-Inventory Value')),
+        matching: find.byType(Card),
+      ),
     );
-    final topCategoriesPosition = tester.getTopLeft(
-      find.text('Top Categories'),
+    final unitsInStock = tester.getTopLeft(
+      find.ancestor(
+        of: find.byKey(const ValueKey('kpi-value-Units in Stock')),
+        matching: find.byType(Card),
+      ),
     );
-    expect(attentionPosition.dy, lessThan(topCategoriesPosition.dy));
+    final lowStock = tester.getTopLeft(
+      find.ancestor(
+        of: find.byKey(const ValueKey('kpi-value-Low Stock')),
+        matching: find.byType(Card),
+      ),
+    );
+    expect((totalProducts.dy - inventoryValue.dy).abs(), lessThan(1));
+    expect(inventoryValue.dx, greaterThan(totalProducts.dx));
+    expect(unitsInStock.dy, greaterThan(totalProducts.dy));
+    expect((unitsInStock.dy - lowStock.dy).abs(), lessThan(1));
+    expect(lowStock.dx, greaterThan(unitsInStock.dx));
   });
 
   testWidgets('shows activity records beyond the first five', (
@@ -299,6 +331,26 @@ void main() {
     await tester.tap(find.byTooltip('Show inventory value'));
     await tester.pumpAndSettle();
     expect(find.text('₱1,240.50'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('keeps desktop sidebar footer visible in a short window', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpDashboard(tester);
+
+    final navigation = find.byKey(const Key('desktop-sidebar-navigation'));
+    expect(navigation, findsOneWidget);
+    await tester.drag(navigation, const Offset(0, -180));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Inventory Health'), findsOneWidget);
+    expect(find.text('Administrator'), findsOneWidget);
+    expect(tester.getBottomLeft(find.text('Administrator')).dy, lessThan(360));
     expect(tester.takeException(), isNull);
   });
 

@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
@@ -172,12 +176,38 @@ ThemeData _buildTheme(Brightness brightness) {
   );
 }
 
-void main() {
-  runApp(const MyApp());
+bool get _isDesktopPlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux);
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadTheme();
+  if (_isDesktopPlatform) {
+    await windowManager.ensureInitialized();
+    const windowOptions = WindowOptions(
+      size: Size(1280, 800),
+      center: true,
+      title: 'Stockwise',
+    );
+    unawaited(
+      windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      }),
+    );
+  }
+  runApp(MyApp(themeProvider: themeProvider));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.themeProvider});
+
+  final ThemeProvider? themeProvider;
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -186,7 +216,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) => AuthService(api: context.read<ApiService>()),
         ),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(
+          create: (_) => themeProvider ?? ThemeProvider(),
+        ),
       ],
       child: Consumer2<AuthService, ThemeProvider>(
         builder: (context, auth, themeProvider, _) => MaterialApp(
