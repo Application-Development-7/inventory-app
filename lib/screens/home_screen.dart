@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hideInventoryValue = false;
   DateTime? _selectedTransactionDate;
   Timer? _greetingTimer;
+  final ScrollController _activityScrollController = ScrollController();
   int _inventoryRevision = 0;
 
   @override
@@ -47,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _greetingTimer?.cancel();
+    _activityScrollController.dispose();
     super.dispose();
   }
 
@@ -360,109 +362,179 @@ class _HomeScreenState extends State<HomeScreen> {
       (Icons.settings_rounded, 'Settings'),
     ];
 
-    return Container(
-      width: 250,
-      padding: const EdgeInsets.fromLTRB(17, 22, 17, 16),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(right: BorderSide(color: colorScheme.outlineVariant)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 30),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.inventory_2_rounded,
-                    color: colorScheme.onPrimary,
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Text(
-                    'Stockwise',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: colorScheme.onSurface,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 500;
+        return Container(
+          width: 250,
+          padding: EdgeInsets.fromLTRB(17, compact ? 12 : 22, 17, 16),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(
+              right: BorderSide(color: colorScheme.outlineVariant),
             ),
           ),
-          Text(
-            'WORKSPACE',
-            style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
-              fontSize: 10,
-              letterSpacing: 1,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          for (var index = 0; index < destinations.length; index++)
-            _sidebarItem(
-              icon: destinations[index].$1,
-              label: destinations[index].$2,
-              index: index,
-              badge: index == 2 ? lowCount : null,
-            ),
-          const Spacer(),
-          _inventoryHealthCard(colorScheme, health, lowCount),
-          const SizedBox(height: 15),
-          Divider(color: colorScheme.outlineVariant),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              CircleAvatar(
-                radius: 19,
-                backgroundColor: colorScheme.primaryContainer,
-                child: Text(
-                  username.isEmpty ? 'A' : username[0].toUpperCase(),
-                  style: TextStyle(color: colorScheme.onPrimaryContainer),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Padding(
+                padding: EdgeInsets.fromLTRB(8, 0, 8, compact ? 12 : 30),
+                child: Row(
                   children: [
-                    Text(
-                      username,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w700,
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.inventory_2_rounded,
+                        color: colorScheme.onPrimary,
                       ),
                     ),
-                    Text(
-                      'Administrator',
-                      style: TextStyle(
-                        color: colorScheme.onSurfaceVariant,
-                        fontSize: 12,
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        'Stockwise',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Log out',
-                onPressed: _confirmLogout,
-                icon: const Icon(Icons.logout_rounded, size: 19),
+              Expanded(
+                child: SingleChildScrollView(
+                  key: const Key('desktop-sidebar-navigation'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'WORKSPACE',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 10,
+                          letterSpacing: 1,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      for (var index = 0; index < destinations.length; index++)
+                        _sidebarItem(
+                          icon: destinations[index].$1,
+                          label: destinations[index].$2,
+                          index: index,
+                          badge: index == 2 ? lowCount : null,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (compact)
+                _compactInventoryHealth(colorScheme, health, lowCount)
+              else
+                _inventoryHealthCard(colorScheme, health, lowCount),
+              SizedBox(height: compact ? 6 : 15),
+              Divider(color: colorScheme.outlineVariant),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 19,
+                    backgroundColor: colorScheme.primaryContainer,
+                    child: Text(
+                      username.isEmpty ? 'A' : username[0].toUpperCase(),
+                      style: TextStyle(color: colorScheme.onPrimaryContainer),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          username,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Administrator',
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Log out',
+                    onPressed: _confirmLogout,
+                    icon: const Icon(Icons.logout_rounded, size: 19),
+                  ),
+                ],
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _compactInventoryHealth(
+    ColorScheme colorScheme,
+    double health,
+    int lowCount,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Row(
+        children: [
+          Icon(Icons.favorite_outline_rounded, color: colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Inventory Health',
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Text(
+            '${(health * 100).round()}%',
+            style: TextStyle(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          if (lowCount > 0) ...[
+            const SizedBox(width: 8),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: colorScheme.error,
+              size: 16,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              '$lowCount',
+              style: TextStyle(
+                color: colorScheme.error,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -681,11 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 900
-            ? 4
-            : constraints.maxWidth >= 580
-            ? 2
-            : 1;
+        final columns = constraints.maxWidth >= 800 ? 4 : 2;
         const spacing = 14.0;
         final cardWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
@@ -705,6 +773,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     item.$4,
                     item.$5,
                     isInventoryValue: item.$1 == 'Inventory Value',
+                    compact: columns == 2,
                   ),
                 ),
               )
@@ -721,11 +790,12 @@ class _HomeScreenState extends State<HomeScreen> {
     Color accent,
     String status, {
     bool isInventoryValue = false,
+    bool compact = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: EdgeInsets.all(compact ? 12 : 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -742,8 +812,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 Container(
-                  width: 38,
-                  height: 38,
+                  width: compact ? 32 : 38,
+                  height: compact ? 32 : 38,
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -756,6 +826,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? 'Show inventory value'
                         : 'Hide inventory value',
                     visualDensity: VisualDensity.compact,
+                    constraints: compact
+                        ? const BoxConstraints.tightFor(width: 32, height: 32)
+                        : null,
+                    padding: compact ? EdgeInsets.zero : null,
                     onPressed: () => setState(
                       () => _hideInventoryValue = !_hideInventoryValue,
                     ),
@@ -769,19 +843,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: 14),
-            Text(
-              key: ValueKey('kpi-value-$title'),
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.onSurface,
-                fontSize: 25,
-                fontWeight: FontWeight.w800,
+            SizedBox(height: compact ? 8 : 14),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                key: ValueKey('kpi-value-$title'),
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: compact ? 21 : 25,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: compact ? 6 : 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -834,26 +911,9 @@ class _HomeScreenState extends State<HomeScreen> {
           PopupMenuItem(value: 'Current stock', child: Text('Current stock')),
           PopupMenuItem(value: 'Last 6 months', child: Text('Last 6 months')),
         ],
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(color: colorScheme.outlineVariant),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Current stock',
-                style: TextStyle(
-                  color: colorScheme.onSurfaceVariant,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-            ],
-          ),
+        child: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: colorScheme.onSurfaceVariant,
         ),
       ),
       expandChild: expandChart,
@@ -992,8 +1052,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         Expanded(
           child: Scrollbar(
+            controller: _activityScrollController,
             child: transactions.isEmpty
                 ? ListView(
+                    controller: _activityScrollController,
                     children: [
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 28),
@@ -1009,6 +1071,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   )
                 : ListView.builder(
+                    controller: _activityScrollController,
                     padding: EdgeInsets.zero,
                     itemCount: transactions.length,
                     itemBuilder: (context, index) =>

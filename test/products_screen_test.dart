@@ -141,6 +141,72 @@ void main() {
     expect(api.requestedPaths, ['/products']);
   });
 
+  testWidgets('paginates ten products and fits the table on mobile', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      Provider<ApiService>.value(
+        value: _ManyProductsApiService(),
+        child: const MaterialApp(home: ProductsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Product 1'), findsOneWidget);
+    expect(find.text('Product 10'), findsOneWidget);
+    expect(find.text('Product 11'), findsNothing);
+    expect(find.text('CATEGORY'), findsNothing);
+    expect(find.text('PRICE'), findsNothing);
+    final categoryY = tester.getTopLeft(find.text('Category').first).dy;
+    final sortY = tester.getTopLeft(find.text('Sort by').first).dy;
+    final addY = tester.getTopLeft(find.byTooltip('Add Product')).dy;
+    expect((categoryY - sortY).abs(), lessThan(1));
+    expect((categoryY - addY).abs(), lessThan(1));
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is SingleChildScrollView &&
+            widget.scrollDirection == Axis.horizontal,
+      ),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.ancestor(
+              of: find.byTooltip('Previous page'),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.byTooltip('Next page'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Product 1'), findsNothing);
+    expect(find.text('Product 11'), findsOneWidget);
+    expect(find.text('Showing 2 of 12 products'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.ancestor(
+              of: find.byTooltip('Next page'),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows a red success snackbar after deleting a product', (
     WidgetTester tester,
   ) async {
@@ -184,6 +250,26 @@ class _ErrorProductsApiService extends ApiService {
   @override
   Future<dynamic> get(String path) async {
     if (path == '/products') return {'message': 'Database error'};
+    throw StateError('Unexpected API request: $path');
+  }
+}
+
+class _ManyProductsApiService extends ApiService {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/products') {
+      return List.generate(
+        12,
+        (index) => {
+          'id': index + 1,
+          'name': 'Product ${index + 1}',
+          'category_name': 'Category',
+          'quantity': index + 1,
+          'min_stock': 2,
+          'price': 1.0,
+        },
+      );
+    }
     throw StateError('Unexpected API request: $path');
   }
 }
