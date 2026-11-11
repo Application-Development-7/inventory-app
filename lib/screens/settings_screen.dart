@@ -63,6 +63,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _updateProfile() async {
     if (_profileFormKey.currentState?.validate() != true) return;
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     final username = _usernameController.text.trim();
     final displayName = _displayNameController.text.trim();
     if (username == _originalUsername.trim() &&
@@ -101,23 +104,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       );
-      if (currentPassword == null || !mounted) return;
+      if (currentPassword == null ||
+          !mounted ||
+          auth.sessionRevision != sessionRevision) {
+        return;
+      }
     }
 
     setState(() => _isUpdatingProfile = true);
     try {
-      await context.read<AuthService>().updateProfile(
+      await auth.updateProfile(
         username: _usernameController.text,
         displayName: _displayNameController.text,
         currentPassword: currentPassword,
       );
-      if (mounted) {
+      if (mounted && auth.sessionRevision == sessionRevision) {
         _originalUsername = username;
         _originalDisplayName = displayName;
-        _showMessage('Profile updated successfully!', isSuccess: true);
+        _showMessage(
+          'Profile updated successfully!',
+          isSuccess: true,
+          messenger: messenger,
+        );
       }
     } catch (error) {
-      if (mounted) _showMessage(_errorMessage(error), isSuccess: false);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          _errorMessage(error),
+          isSuccess: false,
+          messenger: messenger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isUpdatingProfile = false);
     }
@@ -125,30 +142,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _updatePassword() async {
     if (_securityFormKey.currentState?.validate() != true) return;
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isUpdatingPassword = true);
     try {
-      await context.read<AuthService>().updatePassword(
+      await auth.updatePassword(
         currentPassword: _currentPasswordController.text,
         newPassword: _newPasswordController.text,
       );
-      if (!mounted) return;
+      if (!mounted || auth.sessionRevision != sessionRevision) return;
       _currentPasswordController.clear();
       _newPasswordController.clear();
       _confirmPasswordController.clear();
-      _showMessage('Password updated successfully!', isSuccess: true);
+      _showMessage(
+        'Password updated successfully!',
+        isSuccess: true,
+        messenger: messenger,
+      );
     } catch (error) {
-      if (mounted) _showMessage(_errorMessage(error), isSuccess: false);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          _errorMessage(error),
+          isSuccess: false,
+          messenger: messenger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isUpdatingPassword = false);
     }
   }
 
   Future<void> _refreshProfile() async {
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isRefreshingProfile = true);
     try {
-      final auth = context.read<AuthService>();
       await auth.refreshProfile();
-      if (!mounted) return;
+      if (!mounted || auth.sessionRevision != sessionRevision) return;
       _usernameController.text = auth.username ?? '';
       _displayNameController.text = auth.displayName ?? '';
       _originalUsername = _usernameController.text;
@@ -157,15 +189,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _lowStockThresholdController.text = '${auth.lowStockThreshold}';
       _notifyLowStock = auth.notifyLowStock;
       _notifyWeeklySummary = auth.notifyWeeklySummary;
-      _showMessage('Profile refreshed successfully', isSuccess: true);
+      _showMessage(
+        'Profile refreshed successfully',
+        isSuccess: true,
+        messenger: messenger,
+      );
     } catch (error) {
-      if (mounted) _showMessage(_errorMessage(error), isSuccess: false);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          _errorMessage(error),
+          isSuccess: false,
+          messenger: messenger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isRefreshingProfile = false);
     }
   }
 
   Future<void> _confirmSignOut() async {
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -178,8 +222,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Sign Out'),
@@ -187,26 +231,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
-      await context.read<AuthService>().logout();
+    if (confirmed == true &&
+        mounted &&
+        auth.sessionRevision == sessionRevision) {
+      await auth.logout();
     }
   }
 
   Future<void> _savePreferences() async {
     if (_preferencesFormKey.currentState?.validate() != true) return;
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isSavingPreferences = true);
     try {
-      await context.read<AuthService>().updatePreferences(
+      await auth.updatePreferences(
         currency: _currency,
         lowStockThreshold: int.parse(_lowStockThresholdController.text.trim()),
         notifyLowStock: _notifyLowStock,
         notifyWeeklySummary: _notifyWeeklySummary,
       );
-      if (mounted) {
-        _showMessage('Preferences saved successfully', isSuccess: true);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          'Preferences saved successfully',
+          isSuccess: true,
+          messenger: messenger,
+        );
       }
     } catch (error) {
-      if (mounted) _showMessage(_errorMessage(error), isSuccess: false);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          _errorMessage(error),
+          isSuccess: false,
+          messenger: messenger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSavingPreferences = false);
     }
@@ -270,14 +329,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (!confirmed || !mounted) return;
 
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isClearingInventory = true);
     try {
-      await context.read<AuthService>().clearInventory();
-      if (mounted) {
-        _showMessage('Inventory data cleared', isSuccess: true);
+      await auth.clearInventory();
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          'Inventory data cleared',
+          isSuccess: true,
+          messenger: messenger,
+        );
       }
     } catch (error) {
-      if (mounted) _showMessage(_errorMessage(error), isSuccess: false);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          _errorMessage(error),
+          isSuccess: false,
+          messenger: messenger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isClearingInventory = false);
     }
@@ -291,11 +363,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (!confirmed || !mounted) return;
 
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isDeletingAccount = true);
     try {
-      await context.read<AuthService>().deleteAccount();
+      await auth.deleteAccount();
     } catch (error) {
-      if (mounted) _showMessage(_errorMessage(error), isSuccess: false);
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        _showMessage(
+          _errorMessage(error),
+          isSuccess: false,
+          messenger: messenger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isDeletingAccount = false);
     }
@@ -319,9 +400,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String message, {
     required bool isSuccess,
     bool isNeutral = false,
+    ScaffoldMessengerState? messenger,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    ScaffoldMessenger.of(context)
+    final targetMessenger = messenger ?? ScaffoldMessenger.of(context);
+    final colorScheme = Theme.of(targetMessenger.context).colorScheme;
+    targetMessenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(

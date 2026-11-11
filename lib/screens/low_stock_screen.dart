@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import 'product_form_screen.dart';
 import 'stock_transaction_screen.dart';
 
@@ -26,14 +27,19 @@ class _LowStockScreenState extends State<LowStockScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final data = await context.read<ApiService>().get('/products/low-stock');
-      if (mounted) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
         final items = ApiService.parseListResponse(
           data,
           endpoint: 'Low-stock products',
@@ -49,10 +55,9 @@ class _LowStockScreenState extends State<LowStockScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
         setState(() => _error = e.toString());
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -389,12 +394,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
                       _tableRow(pageItems[index], mobile),
                 ),
               ),
-              _tableFooter(
-                pageItems.length,
-                items.length,
-                totalPages,
-                mobile,
-              ),
+              _tableFooter(pageItems.length, items.length, totalPages, mobile),
             ],
           ),
         );
@@ -420,10 +420,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
           if (!mobile)
             const Expanded(flex: 2, child: _TableHeaderLabel('CATEGORY')),
           if (mobile)
-            const SizedBox(
-              width: 48,
-              child: _TableHeaderLabel('STOCK'),
-            )
+            const SizedBox(width: 48, child: _TableHeaderLabel('STOCK'))
           else
             const Expanded(flex: 2, child: _TableHeaderLabel('CURRENT STOCK')),
           if (mobile)
@@ -619,10 +616,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
                 ),
               ),
             ),
-          SizedBox(
-            width: mobile ? 36 : 44,
-            child: _itemActions(item),
-          ),
+          SizedBox(width: mobile ? 36 : 44, child: _itemActions(item)),
         ],
       ),
     );
@@ -669,10 +663,7 @@ class _LowStockScreenState extends State<LowStockScreen> {
           ),
           Text(
             '$_currentPage/$totalPages',
-            style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
-              fontSize: 11,
-            ),
+            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11),
           ),
           IconButton(
             tooltip: 'Next page',
@@ -730,35 +721,43 @@ class _LowStockScreenState extends State<LowStockScreen> {
 
   Future<void> _delete(int id) async {
     final api = context.read<ApiService>();
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete product?'),
         content: const Text('This action cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(
               'Delete',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+              ),
             ),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true ||
+        !mounted ||
+        auth?.sessionRevision != sessionRevision) {
+      return;
+    }
 
     try {
       await api.delete('/products/$id');
-      if (mounted) _load();
+      if (mounted && auth?.sessionRevision == sessionRevision) _load();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }

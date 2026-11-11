@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 class ProductFormScreen extends StatefulWidget {
   final Map<String, dynamic>? product;
@@ -35,7 +36,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       _min.text = '${p['min_stock'] ?? 5}';
       _categoryId = p['category_id'];
     }
-    _loadCategories();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadCategories();
+    });
   }
 
   @override
@@ -49,9 +52,12 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   }
 
   Future<void> _loadCategories() async {
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final data = await context.read<ApiService>().get('/categories');
-      if (mounted) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
         setState(
           () => _categories = ApiService.parseListResponse(
             data,
@@ -60,10 +66,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
         setState(() => _categoryError = e.toString());
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -71,6 +76,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     _saveError = null;
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     try {
       final api = context.read<ApiService>();
       final body = {
@@ -86,9 +95,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       } else {
         await api.put('/products/${widget.product!['id']}', body);
       }
-      if (mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        Navigator.pop(context);
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        navigator.pop();
         messenger.showSnackBar(
           const SnackBar(
             content: Text('Product saved successfully!'),
@@ -98,7 +106,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
         setState(() {
           _saveError = 'Unable to save product. Please try again.';
         });

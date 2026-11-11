@@ -13,6 +13,10 @@ class AuthService extends ChangeNotifier {
   bool notifyLowStock = true;
   bool notifyWeeklySummary = true;
   int inventoryRevision = 0;
+  int _sessionRevision = 0;
+  Future<void>? _logoutInProgress;
+
+  int get sessionRevision => _sessionRevision;
 
   AuthService({ApiService? api}) : _api = api ?? ApiService() {
     _api.setUnauthorizedHandler(logout);
@@ -20,7 +24,9 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _load() async {
+    final sessionRevision = _sessionRevision;
     final prefs = await SharedPreferences.getInstance();
+    if (sessionRevision != _sessionRevision) return;
     final token = prefs.getString('token');
     _api.setToken(token);
     isLoggedIn = token != null && token.trim().isNotEmpty;
@@ -38,10 +44,12 @@ class AuthService extends ChangeNotifier {
     String pass, {
     bool rememberMe = false,
   }) async {
+    final sessionRevision = _sessionRevision;
     final data = await _api.post('/auth/login', {
       'username': user,
       'password': pass,
     }, auth: false);
+    if (sessionRevision != _sessionRevision) return;
     final token = data['token'];
     final responseUser = data['user'];
     if (token is! String || token.trim().isEmpty || responseUser is! Map) {
@@ -73,6 +81,7 @@ class AuthService extends ChangeNotifier {
     );
 
     final prefs = await SharedPreferences.getInstance();
+    if (sessionRevision != _sessionRevision) return;
     await prefs.clear();
     final normalizedToken = token.trim();
     _api.setToken(normalizedToken);
@@ -93,6 +102,7 @@ class AuthService extends ChangeNotifier {
     notifyLowStock = loggedInNotifyLowStock;
     notifyWeeklySummary = loggedInNotifyWeeklySummary;
     await _savePreferences(prefs);
+    if (sessionRevision != _sessionRevision) return;
     isLoggedIn = true;
     username = loggedInUsername;
     displayName = loggedInDisplayName;
@@ -112,6 +122,7 @@ class AuthService extends ChangeNotifier {
     required String displayName,
     String? currentPassword,
   }) async {
+    final sessionRevision = _sessionRevision;
     final normalizedUsername = username.trim();
     final normalizedDisplayName = displayName.trim();
     final request = <String, String>{
@@ -122,6 +133,7 @@ class AuthService extends ChangeNotifier {
       request['currentPassword'] = currentPassword;
     }
     await _api.put('/users/profile', request);
+    if (sessionRevision != _sessionRevision) return;
 
     this.username = normalizedUsername;
     this.displayName = normalizedDisplayName.isEmpty
@@ -132,11 +144,14 @@ class AuthService extends ChangeNotifier {
       await prefs.setString('username', normalizedUsername);
     }
     await _saveDisplayName(prefs);
+    if (sessionRevision != _sessionRevision) return;
     notifyListeners();
   }
 
   Future<void> refreshProfile() async {
+    final sessionRevision = _sessionRevision;
     final data = await _api.get('/users/me');
+    if (sessionRevision != _sessionRevision) return;
     if (data is! Map ||
         data['username'] is! String ||
         (data['display_name'] != null && data['display_name'] is! String)) {
@@ -165,6 +180,7 @@ class AuthService extends ChangeNotifier {
     }
     await _saveDisplayName(prefs);
     await _savePreferences(prefs);
+    if (sessionRevision != _sessionRevision) return;
     notifyListeners();
   }
 
@@ -174,12 +190,14 @@ class AuthService extends ChangeNotifier {
     required bool notifyLowStock,
     required bool notifyWeeklySummary,
   }) async {
+    final sessionRevision = _sessionRevision;
     await _api.put('/users/preferences', {
       'currency': currency,
       'lowStockThreshold': lowStockThreshold,
       'notifyLowStock': notifyLowStock,
       'notifyWeeklySummary': notifyWeeklySummary,
     });
+    if (sessionRevision != _sessionRevision) return;
 
     this.currency = currency;
     this.lowStockThreshold = lowStockThreshold;
@@ -187,11 +205,14 @@ class AuthService extends ChangeNotifier {
     this.notifyWeeklySummary = notifyWeeklySummary;
     final prefs = await SharedPreferences.getInstance();
     await _savePreferences(prefs);
+    if (sessionRevision != _sessionRevision) return;
     notifyListeners();
   }
 
   Future<void> clearInventory() async {
+    final sessionRevision = _sessionRevision;
     await _api.delete('/inventory/clear');
+    if (sessionRevision != _sessionRevision) return;
     inventoryRevision++;
     notifyListeners();
   }
@@ -238,10 +259,23 @@ class AuthService extends ChangeNotifier {
     });
   }
 
-  Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> logout() {
+    final logoutInProgress = _logoutInProgress;
+    if (logoutInProgress != null) return logoutInProgress;
+
+    _sessionRevision++;
+    final logout = _clearSession();
+    _logoutInProgress = logout;
+    return logout.whenComplete(() {
+      if (identical(_logoutInProgress, logout)) {
+        _logoutInProgress = null;
+      }
+    });
+  }
+
+  Future<void> _clearSession() async {
+    final wasLoggedIn = isLoggedIn;
     _api.setToken(null);
-    await prefs.clear();
     isLoggedIn = false;
     username = null;
     displayName = null;
@@ -249,6 +283,9 @@ class AuthService extends ChangeNotifier {
     lowStockThreshold = 5;
     notifyLowStock = true;
     notifyWeeklySummary = true;
-    notifyListeners();
+    if (wasLoggedIn) notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
   }
 }

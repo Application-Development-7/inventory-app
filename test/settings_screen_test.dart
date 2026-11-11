@@ -31,10 +31,17 @@ void main() {
     expect(await api.getToken(), 'new-token');
     expect(prefs.getString('oldSessionData'), isNull);
 
+    var logoutNotifications = 0;
+    auth.addListener(() => logoutNotifications++);
+    final logout = auth.logout();
+    expect(auth.sessionRevision, 1);
+    expect(auth.isLoggedIn, isFalse);
+    await Future.wait([logout, auth.logout()]);
     await auth.logout();
 
     expect(await api.getToken(), isNull);
     expect(prefs.getKeys(), isEmpty);
+    expect(logoutNotifications, 1);
   });
 
   testWidgets('shows display name above username in profile settings', (
