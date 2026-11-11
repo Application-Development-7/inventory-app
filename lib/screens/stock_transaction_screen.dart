@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 class StockTransactionScreen extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -33,6 +34,10 @@ class _StockTransactionScreenState extends State<StockTransactionScreen> {
   Future<void> _save() async {
     if (_formKey.currentState?.validate() != true) return;
     setState(() => _saving = true);
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     try {
       await context.read<ApiService>().post('/stock', {
         'product_id': widget.product['id'],
@@ -40,9 +45,8 @@ class _StockTransactionScreenState extends State<StockTransactionScreen> {
         'quantity': int.parse(_qty.text.trim()),
         'note': _note.text.trim(),
       });
-      if (mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        Navigator.pop(context);
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        navigator.pop();
         messenger.showSnackBar(
           const SnackBar(
             content: Text('Stock updated successfully!'),
@@ -52,9 +56,8 @@ class _StockTransactionScreenState extends State<StockTransactionScreen> {
         );
       }
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        messenger.showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

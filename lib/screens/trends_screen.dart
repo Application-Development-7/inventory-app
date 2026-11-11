@@ -412,7 +412,7 @@ class _TrendsScreenState extends State<TrendsScreen> {
         },
       ),
     );
-    if (selectedId != null) _onProductSelected(selectedId);
+    if (mounted && selectedId != null) _onProductSelected(selectedId);
   }
 
   void _onForecastViewSelected(Set<String> selection) {

@@ -39,7 +39,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDashboard();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadDashboard();
+    });
     _greetingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -106,11 +108,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadDashboard() async {
     setState(() => _loading = true);
     final api = context.read<ApiService>();
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final data = ApiService.parseObjectResponse(
         await api.get('/dashboard'),
         endpoint: 'Dashboard',
       );
+      if (!mounted || auth.sessionRevision != sessionRevision) return;
       final transactions = ApiService.parseListResponseOrEmpty(
         data['recent_transactions'],
       );
@@ -125,16 +131,17 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
+    if (!mounted || auth.sessionRevision != sessionRevision) return;
     try {
       final products = ApiService.parseListResponse(
         await api.get('/products'),
         endpoint: 'Products',
       );
+      if (!mounted || auth.sessionRevision != sessionRevision) return;
       final stockByCategory = <String, int>{};
       for (final product in products) {
         final rawCategory = product['category_name']?.toString().trim();
@@ -160,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && auth.sessionRevision == sessionRevision) {
         setState(() {
           _categoryStockError = e.toString();
         });
@@ -172,13 +179,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadMoreTransactions() async {
     if (_loadingMoreTransactions || !_hasMoreTransactions) return;
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     final lastTransaction = _recentTransactions.last;
     final beforeCreatedAt = lastTransaction['created_at']?.toString();
     final beforeId = int.tryParse(lastTransaction['id']?.toString() ?? '');
     if (beforeCreatedAt == null ||
         beforeCreatedAt.isEmpty ||
         beforeId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Cannot load older activity right now.')),
       );
       return;
@@ -192,16 +202,15 @@ class _HomeScreenState extends State<HomeScreen> {
             beforeCreatedAt: beforeCreatedAt,
             beforeId: beforeId,
           );
-      if (mounted) {
+      if (mounted && auth.sessionRevision == sessionRevision) {
         setState(() {
           _recentTransactions = [..._recentTransactions, ...nextPage];
           _hasMoreTransactions = nextPage.length == 20;
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted && auth.sessionRevision == sessionRevision) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _loadingMoreTransactions = false);
@@ -541,6 +550,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _confirmLogout() async {
+    final auth = context.read<AuthService>();
+    final sessionRevision = auth.sessionRevision;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -555,8 +566,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Log out'),
@@ -565,8 +576,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
-    if (confirmed == true && mounted) {
-      await context.read<AuthService>().logout();
+    if (confirmed == true &&
+        mounted &&
+        auth.sessionRevision == sessionRevision) {
+      await auth.logout();
     }
   }
 

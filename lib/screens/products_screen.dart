@@ -39,14 +39,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final data = await context.read<ApiService>().get('/products');
-      if (mounted) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
         final products = ApiService.parseListResponse(
           data,
           endpoint: 'Products',
@@ -61,9 +66,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -72,41 +76,47 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   Future<void> _delete(int id) async {
     final api = context.read<ApiService>();
+    final auth = Provider.of<AuthService?>(context, listen: false);
+    final sessionRevision = auth?.sessionRevision;
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete product?'),
         content: const Text('This action cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
-    if (ok == true) {
-      try {
-        await api.delete('/products/$id');
-        if (mounted) {
-          _load();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Product deleted'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.toString())));
-        }
+    if (ok != true ||
+        !mounted ||
+        auth?.sessionRevision != sessionRevision) {
+      return;
+    }
+    try {
+      await api.delete('/products/$id');
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        _load();
+        messenger.showSnackBar(
+          SnackBar(
+            content: const Text('Product deleted'),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted && auth?.sessionRevision == sessionRevision) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
