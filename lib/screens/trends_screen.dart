@@ -810,20 +810,22 @@ class _TrendsScreenState extends State<TrendsScreen> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 40,
-              interval: 2,
-              getTitlesWidget: (value, _) {
+              reservedSize: 50,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
                 final index = value.toInt();
                 if (index < 0 || index >= points.length) {
                   return const SizedBox.shrink();
                 }
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                return SideTitleWidget(
+                  meta: meta,
+                  angle: -math.pi / 4,
+                  space: 4,
                   child: Text(
                     _periodLabel(points[index]),
                     style: TextStyle(
                       color: colorScheme.onSurfaceVariant,
-                      fontSize: 10,
+                      fontSize: 8,
                     ),
                   ),
                 );

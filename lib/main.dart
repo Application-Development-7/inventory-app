@@ -80,9 +80,9 @@ ThemeData _buildTheme(Brightness brightness) {
         surface: isDark ? const Color(0xFF252331) : const Color(0xFFFFFEFC),
       );
   final scaffoldColor = isDark ? const Color(0xFF191821) : warmOffWhite;
-  final textTheme = GoogleFonts.nunitoTextTheme(
-    ThemeData(brightness: brightness).textTheme,
-  );
+  final textTheme = isDark
+      ? GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme)
+      : GoogleFonts.poppinsTextTheme();
   final inputBorder = OutlineInputBorder(
     borderRadius: BorderRadius.circular(20),
     borderSide: BorderSide(
