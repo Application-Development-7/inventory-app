@@ -16,10 +16,10 @@ class ApiService {
   }
 
   // USE THIS FOR CHROME/WEB OR WINDOWS:
-  static const String baseUrl = 'http://localhost:3000/api';
+  // static const String baseUrl = 'http://localhost:3000/api';
 
   // USE THIS INSTEAD IF YOU RUN ON ANDROID EMULATOR:
-  // static const String baseUrl = 'http://10.0.2.2:3000/api';
+  static const String baseUrl = 'http://10.0.2.2:3000/api';
   // static const String baseUrl = 'http://localhost:3000/api';
   // static const String baseUrl = '192.168.1.58:3000/api';
 
